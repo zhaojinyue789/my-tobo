@@ -1,0 +1,5 @@
+# 本机金山毒霸实时扫描会锁住并行链接刚写出的 exe（LNK1105 / 1224），
+# 因此强制单线程编译；若以后在杀软中把 target 目录加入信任区，可删掉 jobs = 1 提速。
+[build]
+jobs = 1
+target-dir = "D:\\rust\\target-mytobo"

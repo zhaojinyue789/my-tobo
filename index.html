@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的待办</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#3b82f6" />
+    <link rel="icon" type="image/png" href="./icons/icon-256.png" />
+    <link rel="apple-touch-icon" href="./icons/icon-256.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+  </head>
+  <body>
+    <main class="app">
+      <h1 class="app-title">我的待办</h1>
+      <div class="sync-bar">
+        <span id="sync-status" class="sync-status">
+          <span id="sync-dot" class="sync-dot"></span>
+          <span id="sync-text"></span>
+        </span>
+        <span class="sync-actions">
+          <button id="sync-now" class="sync-btn" type="button" title="立即同步" aria-label="立即同步">⟳</button>
+          <button id="sync-settings" class="sync-btn" type="button" title="同步设置" aria-label="同步设置">⚙</button>
+        </span>
+      </div>
+      <form id="todo-form" class="todo-form" autocomplete="off">
+        <input
+          id="todo-input"
+          class="todo-input"
+          type="text"
+          placeholder="想做点什么？"
+          maxlength="200"
+        />
+        <button type="submit" class="todo-add">添加</button>
+      </form>
+      <div id="filters" class="filters">
+        <button class="filter is-active" data-filter="all">全部</button>
+        <button class="filter" data-filter="active">未完成</button>
+        <button class="filter" data-filter="completed">已完成</button>
+      </div>
+      <ul id="todo-list" class="todo-list"></ul>
+      <footer id="todo-footer" class="todo-footer hidden">
+        <span id="todo-count"></span>
+        <button id="clear-completed" class="clear-completed">清除已完成</button>
+      </footer>
+    </main>
+
+    <div id="sync-modal" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sync-modal-title">
+        <h2 id="sync-modal-title" class="modal-title">同步设置</h2>
+        <p class="modal-hint">
+          待办通过 GitHub 私密 Gist 在手机与电脑之间同步。需要一个仅勾选
+          <code>gist</code> 权限的 Token：<a
+            href="https://github.com/settings/tokens/new?scopes=gist&description=my-tobo"
+            target="_blank"
+            rel="noreferrer"
+            >点此创建 Token</a
+          >，粘贴到下方即可。手机端填同一个 Gist ID 与 Token。
+        </p>
+        <label class="modal-field">
+          <span>GitHub Token</span>
+          <input id="gist-token" type="password" placeholder="ghp_…" autocomplete="off" />
+        </label>
+        <label class="modal-field">
+          <span>Gist ID</span>
+          <input id="gist-id" type="text" placeholder="已有 Gist 就填 ID；没有就点“创建新私密 Gist”" />
+        </label>
+        <p id="sync-modal-error" class="modal-error hidden"></p>
+        <div class="modal-actions">
+          <button id="gist-create" class="modal-btn primary" type="button">创建新私密 Gist</button>
+          <button id="gist-save" class="modal-btn" type="button">保存并连接</button>
+          <button id="gist-disconnect" class="modal-btn danger" type="button">断开同步</button>
+          <button id="gist-close" class="modal-btn" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
