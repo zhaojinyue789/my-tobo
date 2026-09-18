@@ -11,6 +11,11 @@ const GIST_FILENAME = "my-tobo.json";
 const API = "https://api.github.com";
 /** 本地变更后的防抖推送延时 */
 const DEBOUNCE_MS = 3000;
+/** 自动轮询间隔：常态拉取远端 */
+const POLL_INTERVAL_MS = 30_000;
+/** 失败重试：15s 起指数退避 */
+const RETRY_BASE_MS = 15_000;
+const RETRY_MAX_MS = 120_000;
 
 export type SyncState = "unconfigured" | "idle" | "syncing" | "ok" | "error";
 
@@ -108,6 +113,8 @@ export class SyncController {
   private rerun = false;
   private lastSync: number | undefined = getLastSync();
   private status: SyncStatus = { state: "idle", message: "" };
+  private autoTimer: ReturnType<typeof setTimeout> | undefined;
+  private failureCount = 0;
 
   constructor(private hooks: SyncHooks) {}
 
@@ -124,6 +131,30 @@ export class SyncController {
   onLocalChange(): void {
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.syncNow(), DEBOUNCE_MS);
+  }
+
+  /**
+   * 自动同步循环：常态每 30 秒拉一次远端（手机端的改动电脑端才能自动感知），
+   * 失败时指数退避（15s 起，封顶 2 分钟），成功后恢复 30 秒节奏。
+   */
+  startAutoSync(): void {
+    this.scheduleNext(POLL_INTERVAL_MS);
+  }
+
+  private scheduleNext(delay: number): void {
+    clearTimeout(this.autoTimer);
+    this.autoTimer = setTimeout(() => void this.autoTick(), delay);
+  }
+
+  private async autoTick(): Promise<void> {
+    await this.syncNow();
+    if (this.status.state === "error") {
+      this.failureCount = Math.min(this.failureCount + 1, 4);
+      this.scheduleNext(Math.min(RETRY_BASE_MS * 2 ** this.failureCount, RETRY_MAX_MS));
+    } else {
+      this.failureCount = 0;
+      this.scheduleNext(POLL_INTERVAL_MS);
+    }
   }
 
   /** 启动时拉取 + 手动同步共用 */

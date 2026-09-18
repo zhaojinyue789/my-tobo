@@ -223,6 +223,14 @@ input.focus();
 render();
 // 启动即拉取一次远端（未配置时静默显示“未开启同步”）
 void sync.syncNow();
+// 自动同步循环：30 秒轮询 + 失败退避重试
+sync.startAutoSync();
+// 窗口回到前台立即拉一次（手机切回 App、电脑切回窗口时感知另一端改动）
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void sync.syncNow();
+});
+// 网络恢复立即同步
+window.addEventListener("online", () => void sync.syncNow());
 
 // PWA：仅在 http(s) 环境注册（file:// 与 Tauri 自定义协议下跳过）
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
