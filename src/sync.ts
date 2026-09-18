@@ -16,6 +16,8 @@ const POLL_INTERVAL_MS = 30_000;
 /** 失败重试：15s 起指数退避 */
 const RETRY_BASE_MS = 15_000;
 const RETRY_MAX_MS = 120_000;
+/** 单次请求超时：网络挂起（断连/代理卡死）时 fetch 可能长时间不返回，卡死整个同步循环 */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 export type SyncState = "unconfigured" | "idle" | "syncing" | "ok" | "error";
 
@@ -63,29 +65,36 @@ async function gistRequest(
   body?: unknown,
 ): Promise<Record<string, unknown>> {
   const url = method === "POST" ? `${API}/gists` : `${API}/gists/${cfg.gistId}`;
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${cfg.token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    let detail = "";
-    try {
-      detail = (await res.json())?.message ?? "";
-    } catch {
-      /* 忽略非 JSON 响应体 */
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${cfg.token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = (await res.json())?.message ?? "";
+      } catch {
+        /* 忽略非 JSON 响应体 */
+      }
+      if (res.status === 401) throw new Error("Token 无效或已过期（401）");
+      if (res.status === 404) throw new Error("Gist 不存在，或 Token 无权访问它（404）");
+      if (res.status === 403 && detail.includes("rate limit"))
+        throw new Error("超出 GitHub API 速率限制，请稍后再试（403）");
+      throw new Error(`GitHub API 错误 ${res.status}${detail ? `：${detail}` : ""}`);
     }
-    if (res.status === 401) throw new Error("Token 无效或已过期（401）");
-    if (res.status === 404) throw new Error("Gist 不存在，或 Token 无权访问它（404）");
-    if (res.status === 403 && detail.includes("rate limit"))
-      throw new Error("超出 GitHub API 速率限制，请稍后再试（403）");
-    throw new Error(`GitHub API 错误 ${res.status}${detail ? `：${detail}` : ""}`);
+    return (await res.json()) as Record<string, unknown>;
+  } finally {
+    clearTimeout(timer);
   }
-  return (await res.json()) as Record<string, unknown>;
 }
 
 function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
@@ -174,26 +183,39 @@ export class SyncController {
       const remoteGist = await gistRequest(cfg, "GET");
       const remote = parseRemoteTodos(remoteGist);
       const local = loadTodos();
-      const merged = purgeTombstones(mergeTodos(local, remote));
+      let merged = purgeTombstones(mergeTodos(local, remote));
 
       // 远端与合并结果不同则推回；本地与合并结果不同则落库刷新
       if (!sameTodos(merged, remote)) {
         await gistRequest(cfg, "PATCH", { files: { [GIST_FILENAME]: { content: gistPayload(merged) } } });
       }
-      if (!sameTodos(merged, local)) {
+      // PATCH 往返期间用户可能又改了本地：写回前重读一次再合并，
+      // 避免用过期快照覆盖用户新输入（否则新待办会凭空消失）
+      const fresh = loadTodos();
+      const localChanged = !sameTodos(fresh, local);
+      if (localChanged) {
+        merged = purgeTombstones(mergeTodos(fresh, merged));
+      }
+      if (!sameTodos(merged, fresh)) {
         saveTodos(merged);
         this.hooks.onTodos(merged);
+      }
+      if (localChanged) {
+        // 期间的用户改动尚未推到远端，防抖后补推
+        this.onLocalChange();
       }
       this.lastSync = Date.now();
       localStorage.setItem(LAST_SYNC_KEY, String(this.lastSync));
       this.emit({ state: "ok", message: "", lastSync: this.lastSync });
     } catch (err) {
       const message =
-        err instanceof TypeError
-          ? "网络不可用，稍后自动重试"
-          : err instanceof Error
-            ? err.message
-            : String(err);
+        err instanceof DOMException && err.name === "AbortError"
+          ? "网络超时，稍后自动重试"
+          : err instanceof TypeError
+            ? "网络不可用，稍后自动重试"
+            : err instanceof Error
+              ? err.message
+              : String(err);
       this.emit({ state: "error", message, lastSync: this.lastSync });
     } finally {
       this.running = false;
