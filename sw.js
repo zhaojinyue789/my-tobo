@@ -1,6 +1,6 @@
 // 应用外壳缓存：dist 是单文件 index.html，缓存导航入口即可离线使用；
 // 网络优先保证更新能到达，断网时回退缓存。
-const CACHE_NAME = "my-tobo-v1";
+const CACHE_NAME = "my-tobo-v2";
 const SHELL_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
