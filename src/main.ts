@@ -31,6 +31,7 @@ const gistCreateBtn = document.querySelector<HTMLButtonElement>("#gist-create")!
 const gistSaveBtn = document.querySelector<HTMLButtonElement>("#gist-save")!;
 const gistDisconnectBtn = document.querySelector<HTMLButtonElement>("#gist-disconnect")!;
 const gistCloseBtn = document.querySelector<HTMLButtonElement>("#gist-close")!;
+const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
 
 let todos: Todo[] = loadTodos();
 let filter: Filter = "all";
@@ -65,7 +66,8 @@ function render(): void {
 }
 
 function persist(): void {
-  saveTodos(todos);
+  // 写入失败（如配额超限）时亮起顶栏提示，恢复后自动隐藏
+  storageWarning.classList.toggle("hidden", saveTodos(todos));
   sync.onLocalChange();
   render();
 }
@@ -205,7 +207,10 @@ gistSaveBtn.addEventListener("click", () => {
   const token = gistTokenInput.value.trim();
   const gistId = gistIdInput.value.trim();
   if (!token || !gistId) return showModalError("Token 和 Gist ID 都需要填写");
-  sync.saveConfig({ token, gistId });
+  if (!sync.saveConfig({ token, gistId })) {
+    showModalError("本地存储写入失败，配置未保存，请检查存储空间");
+    return;
+  }
   modal.classList.add("hidden");
   void sync.syncNow();
 });

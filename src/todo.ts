@@ -47,8 +47,14 @@ function migrate(item: Todo): Todo {
   };
 }
 
-export function saveTodos(todos: Todo[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(purgeTombstones(todos)));
+export function saveTodos(todos: Todo[]): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(purgeTombstones(todos)));
+    return true;
+  } catch (err) {
+    console.error("待办保存失败（localStorage 写入异常）：", err);
+    return false;
+  }
 }
 
 export function purgeTombstones(todos: Todo[]): Todo[] {

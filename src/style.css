@@ -428,6 +428,16 @@ body {
   color: var(--danger);
 }
 
+.storage-warning {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--danger);
+  background: var(--card);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+}
+
 .modal-actions {
   display: flex;
   flex-wrap: wrap;

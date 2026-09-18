@@ -48,9 +48,24 @@ export function loadSyncConfig(): SyncConfig | null {
   }
 }
 
-export function saveSyncConfig(cfg: SyncConfig | null): void {
-  if (cfg) localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
-  else localStorage.removeItem(CONFIG_KEY);
+/** 容错：用户可能直接粘贴 Gist 页面地址（如 https://gist.github.com/<user>/<id>），提取末尾的 Gist ID */
+function normalizeGistId(raw: string): string {
+  const input = raw.trim();
+  if (!/gist\.github\.com/i.test(input)) return input;
+  const path = input.split(/[?#]/, 1)[0];
+  const segments = path.split(/[\s/]+/).filter(Boolean);
+  return segments.length > 0 ? segments[segments.length - 1] : input;
+}
+
+export function saveSyncConfig(cfg: SyncConfig | null): boolean {
+  try {
+    if (cfg) localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+    else localStorage.removeItem(CONFIG_KEY);
+    return true;
+  } catch (err) {
+    console.error("同步配置写入失败：", err);
+    return false;
+  }
 }
 
 function getLastSync(): number | undefined {
@@ -97,13 +112,44 @@ async function gistRequest(
   }
 }
 
+/**
+ * 远端条目校验：id/text/createdAt/updatedAt 必填且类型正确，completed/deletedAt 可选但类型须对；
+ * 脏数据（Gist 被手动改坏等）返回 null 丢弃，防止污染渲染与本地存储。
+ */
+function sanitizeRemoteTodo(item: unknown): Todo | null {
+  if (typeof item !== "object" || item === null) return null;
+  const t = item as Todo;
+  if (
+    typeof t.id !== "string" ||
+    t.id === "" ||
+    typeof t.text !== "string" ||
+    typeof t.createdAt !== "number" ||
+    !Number.isFinite(t.createdAt) ||
+    typeof t.updatedAt !== "number" ||
+    !Number.isFinite(t.updatedAt) ||
+    (t.completed !== undefined && typeof t.completed !== "boolean") ||
+    (t.deletedAt != null && typeof t.deletedAt !== "number")
+  ) {
+    return null;
+  }
+  return { ...t, completed: t.completed ?? false };
+}
+
 function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
   const files = gist.files as Record<string, { content?: string }> | undefined;
   const content = files?.[GIST_FILENAME]?.content;
   if (!content) return [];
   const data: unknown = JSON.parse(content);
   const todos = (data as { todos?: unknown })?.todos;
-  return Array.isArray(todos) ? (todos as Todo[]) : [];
+  if (!Array.isArray(todos)) return [];
+  return todos.flatMap((item) => {
+    const todo = sanitizeRemoteTodo(item);
+    if (!todo) {
+      console.error("[my-tobo] 同步数据中存在无效条目，已丢弃：", item);
+      return [];
+    }
+    return [todo];
+  });
 }
 
 function gistPayload(todos: Todo[]): string {
@@ -131,9 +177,12 @@ export class SyncController {
     return loadSyncConfig() !== null;
   }
 
-  saveConfig(cfg: SyncConfig | null): void {
-    saveSyncConfig(cfg);
+  saveConfig(cfg: SyncConfig | null): boolean {
+    // 入库前做 Gist ID 容错，支持直接粘贴完整 Gist 地址
+    if (cfg) cfg = { ...cfg, gistId: normalizeGistId(cfg.gistId) };
+    if (!saveSyncConfig(cfg)) return false;
     this.emit(cfg ? { state: "idle", message: "" } : { state: "unconfigured", message: "" });
+    return true;
   }
 
   /** 本地数据变更后调用：防抖自动同步 */
