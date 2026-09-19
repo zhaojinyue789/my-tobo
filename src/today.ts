@@ -106,7 +106,9 @@ export function promoteDaily(today: string = todayISO()): void {
 }
 
 function mutateDaily(today: string, fn: (log: DailyLog) => void): void {
-  const log = loadDaily(today) ?? { date: today, completedIds: [], skippedIds: [] };
+  // 日志不是今天的（昨日残留且回顾尚未关闭）：直接开新日志，避免把今天的完成写进昨日条目
+  const existing = loadDaily(today);
+  const log = existing && existing.date === today ? existing : { date: today, completedIds: [], skippedIds: [] };
   fn(log);
   saveDaily(log);
 }

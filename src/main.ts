@@ -16,6 +16,8 @@ import {
   type Todo,
 } from "./todo";
 import {
+  appendDailyCompletion,
+  appendDailySkip,
   clearFocusState,
   computeFocusElapsed,
   dateShift,
@@ -24,6 +26,7 @@ import {
   loadFocusState,
   loadTab,
   promoteDaily,
+  removeDailyCompletion,
   saveFocusState,
   saveTab,
   splitTodayOverdue,
@@ -352,6 +355,13 @@ listArea.addEventListener("click", (e) => {
     const completed = !current.completed;
     todos = todos.map((t) => (t.id === id ? { ...t, completed, updatedAt: Date.now() } : t));
     stack.push(makeUpdateCommand(id, { completed: current.completed }, { completed }));
+    // 每日日志：今日成员的完成/取消完成（任务书 D⑧；日志 30 天滚动清理在 loadDaily 内）
+    if (completed) {
+      const updated = todos.find((t) => t.id === id);
+      if (updated && isTodayMember(updated, todayISO())) appendDailyCompletion(id);
+    } else {
+      removeDailyCompletion(id);
+    }
   } else if (target.classList.contains("todo-focus")) {
     startFocus(id);
     return; // startFocus 内部已本地落盘
@@ -822,6 +832,7 @@ function focusDone(): void {
   settleFocus();
   todos = todos.map((t) => (t.id === target.id ? { ...t, completed: true, updatedAt: Date.now() } : t));
   stack.push(makeUpdateCommand(target.id, { completed: target.completed }, { completed: true }));
+  appendDailyCompletion(target.id); // 今日成员的完成入日志（任务书 D⑧）
   persist();
   closeFocusOverlay();
 }
@@ -833,6 +844,7 @@ function focusSkip(): void {
   settleFocus();
   todos = todos.map((t) => (t.id === target.id ? { ...t, today: false, updatedAt: Date.now() } : t));
   stack.push(makeUpdateCommand(target.id, { today: target.today ?? null }, { today: false }));
+  appendDailySkip(target.id);
   persist();
   closeFocusOverlay();
 }
@@ -1007,6 +1019,7 @@ function reviewNotDo(id: string): void {
   const current = todos.find((t) => t.id === id);
   if (!current) return;
   reviewApply(id, { today: current.today ?? null }, { today: false });
+  appendDailySkip(id); // 记入日志，明日摘要可见（任务书 D⑧）
   refreshReview();
 }
 
