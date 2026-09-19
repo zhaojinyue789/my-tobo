@@ -1090,6 +1090,28 @@ body {
   }
 }
 
+/* 触屏：拖拽行触摸目标 ≥44px；禁文字选择/长按呼出，避免打断长按拖拽手势 */
+@media (pointer: coarse) {
+  .todo-item {
+    min-height: 44px;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .todo-toggle {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+  }
+
+  .todo-delete {
+    width: 32px;
+    height: 32px;
+    opacity: 0.6;
+  }
+}
+
 /* 尊重系统减弱动效设置 */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -393,6 +393,15 @@ const EDGE_SCROLL_SPEED = 12;
 
 listEl.addEventListener("dragstart", (e) => {
   const dragEvent = e as DragEvent;
+  // 触摸长按流程已接管（或正在拖拽）：禁用原生拖拽避免双轨（安卓 Chrome 支持原生 DnD）
+  if (drag || touchPending) {
+    dragEvent.preventDefault();
+    if (touchPending) {
+      clearTimeout(touchPending.timer);
+      touchPending = null;
+    }
+    return;
+  }
   const target = dragEvent.target as HTMLElement;
   // 行内控件（下拉/日期/按钮）交互优先，不误起拖拽
   if (target.closest("select, input, button")) {
@@ -497,6 +506,100 @@ document.addEventListener("keydown", (e) => {
   movePlaceholder(drag.originalIndex);
   finishDrag();
 });
+
+// ---------- 触摸降级：移动端无原生 DnD 事件，用 touch 三事件模拟 ----------
+// 长按激活（防吞滚动）；落点计算/占位符/提交与桌面复用同一套代码（DECISIONS.md D10）
+
+const TOUCH_LONG_PRESS_MS = 250;
+/** 长按生效前位移超过该值视为滚动意图，取消激活 */
+const TOUCH_MOVE_CANCEL_PX = 10;
+
+interface TouchPending {
+  id: string;
+  item: HTMLElement;
+  startX: number;
+  startY: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+let touchPending: TouchPending | null = null;
+
+listEl.addEventListener(
+  "touchstart",
+  (e) => {
+    if (drag) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("select, input, button")) return; // 控件交互优先，永不激活拖拽
+    const item = target.closest<HTMLElement>(".todo-item");
+    const id = item?.dataset.id;
+    if (!item || !id) return;
+    const visible = applyFilter(sortTodos(todos), view);
+    if (visible.length < 2) return;
+    const originalIndex = visible.findIndex((t) => t.id === id);
+    if (originalIndex < 0) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const timer = setTimeout(
+      () => beginTouchDrag(id, item, originalIndex, touch.clientY),
+      TOUCH_LONG_PRESS_MS,
+    );
+    touchPending = { id, item, startX: touch.clientX, startY: touch.clientY, timer };
+  },
+  { passive: true },
+);
+
+/** 长按生效：进入拖拽态（若原生拖拽已接管则放弃，防双占位符） */
+function beginTouchDrag(
+  id: string,
+  item: HTMLElement,
+  originalIndex: number,
+  clientY: number,
+): void {
+  touchPending = null;
+  if (drag) return;
+  item.classList.add("dragging");
+  const placeholder = document.createElement("li");
+  placeholder.className = "drag-placeholder";
+  placeholder.style.height = `${item.offsetHeight}px`;
+  item.before(placeholder);
+  drag = { id, placeholder, lastIndex: originalIndex, originalIndex, pointerY: clientY, raf: 0 };
+  startAutoScroll();
+}
+
+listEl.addEventListener(
+  "touchmove",
+  (e) => {
+    const touch = e.touches[0];
+    if (!drag) {
+      // 未激活：位移超阈值取消长按计时，放行为页面滚动
+      if (touchPending && touch) {
+        const dx = touch.clientX - touchPending.startX;
+        const dy = touch.clientY - touchPending.startY;
+        if (Math.hypot(dx, dy) > TOUCH_MOVE_CANCEL_PX) {
+          clearTimeout(touchPending.timer);
+          touchPending = null;
+        }
+      }
+      return;
+    }
+    e.preventDefault(); // 拖拽中阻止页面滚动（本监听为非 passive）
+    if (touch) drag.pointerY = touch.clientY;
+    const index = insertionIndex();
+    if (index !== drag.lastIndex) movePlaceholder(index);
+  },
+  { passive: false },
+);
+
+function endTouchDrag(): void {
+  if (touchPending) {
+    clearTimeout(touchPending.timer);
+    touchPending = null;
+  }
+  if (drag) finishDrag();
+}
+
+listEl.addEventListener("touchend", endTouchDrag);
+listEl.addEventListener("touchcancel", endTouchDrag);
 
 // ---------- 复合筛选（分类/状态二选一） ----------
 
