@@ -19,13 +19,16 @@ import {
   clearFocusState,
   computeFocusElapsed,
   formatHMS,
+  loadDaily,
   loadFocusState,
   loadTab,
+  promoteDaily,
   saveFocusState,
   saveTab,
   splitTodayOverdue,
   isTodayMember,
   todayMembers,
+  type DailyLog,
   type TodayTab,
 } from "./today";
 import {
@@ -900,6 +903,62 @@ document.addEventListener("keydown", (e) => {
   closeFocusOverlay();
 });
 
+// ---------- 晚间/跨日回顾（第三幕）：启动与回前台比对日志 date，无定时器（DECISIONS.md D17） ----------
+
+const reviewPanel = document.querySelector<HTMLElement>("#review-panel")!;
+const reviewSummary = document.querySelector<HTMLElement>("#review-summary")!;
+const reviewList = document.querySelector<HTMLUListElement>("#review-list")!;
+const reviewEmpty = document.querySelector<HTMLElement>("#review-empty")!;
+const reviewCloseBtn = document.querySelector<HTMLButtonElement>("#review-close")!;
+
+/** 回顾「未完成」口径：当前 today 成员中未完成者（DECISIONS.md D16） */
+function reviewUnfinished(): Todo[] {
+  return todayMembers(todos, todayISO()).filter((t) => !t.completed);
+}
+
+/** 跨日检测：日志 date 早于今天 ⇒ 弹回顾面板 */
+function checkReview(): void {
+  const today = todayISO();
+  const daily = loadDaily(today);
+  if (!daily || daily.date >= today) return;
+  openReview(daily);
+}
+
+function openReview(daily: DailyLog): void {
+  reviewSummary.textContent = `昨日完成 ${daily.completedIds.length} 项 · 跳过 ${daily.skippedIds.length} 项`;
+  const unfinished = reviewUnfinished();
+  reviewEmpty.classList.toggle("hidden", unfinished.length > 0);
+  reviewList.replaceChildren(...unfinished.map((t) => reviewRow(t)));
+  reviewPanel.classList.remove("hidden");
+}
+
+/** 关闭 = 换日：写入今天的空日志，当天不再弹（DECISIONS.md D17） */
+function closeReview(): void {
+  reviewPanel.classList.add("hidden");
+  promoteDaily(todayISO());
+}
+
+/** 回顾行（D⑥ 只读骨架；D⑦ 接入三项操作） */
+function reviewRow(t: Todo): HTMLLIElement {
+  const li = document.createElement("li");
+  li.className = "review-item";
+  li.dataset.id = t.id;
+  const text = document.createElement("span");
+  text.className = "review-item-text";
+  text.textContent = t.text;
+  const due = document.createElement("span");
+  due.className = "review-item-due";
+  due.textContent = t.dueDate ? formatDueZh(t.dueDate) : "";
+  li.append(text, due);
+  return li;
+}
+
+reviewCloseBtn.addEventListener("click", closeReview);
+// 点击遮罩 = 直接关闭（同「开始今天」）
+reviewPanel.addEventListener("click", (e) => {
+  if (e.target === reviewPanel) closeReview();
+});
+
 /** 关标签重开恢复（DECISIONS.md D19）：同日运行中 ⇒ 恢复遮罩继续计时；跨日 ⇒ 自动转暂停；条目已删 ⇒ 丢弃 */
 function restoreFocusOnLoad(): void {
   const saved = loadFocusState();
@@ -1126,6 +1185,8 @@ input.focus();
 render();
 // 启动恢复专注会话（同日续跑 / 跨日转暂停，DECISIONS.md D19）
 restoreFocusOnLoad();
+// 跨日回顾检查（无定时器：仅启动与回前台两个时机）
+checkReview();
 // 启动批量过期通知：N 条过期未通知各发一条；权限未授予/失败静默降级
 void notifyOverdueStartup();
 // 启动即拉取一次远端（未配置时静默显示“未开启同步”）
@@ -1140,6 +1201,8 @@ document.addEventListener("visibilitychange", () => {
       renderFocusTimer();
       startFocusTimer();
     }
+    // 跨日回顾：切回前台时日志 date 可能已过期（如隔夜挂后台）
+    checkReview();
     void sync.syncNow();
   } else {
     // 后台降频：不做无谓 tick（时长由时间戳保证，与 sync 侧后台策略同构）

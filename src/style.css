@@ -1091,6 +1091,95 @@ body {
 }
 
 /* ============================================================
+   回顾面板（第三幕）：复用模态骨架，层级介于 sync-modal 与专注遮罩之间
+   ============================================================ */
+
+.review-backdrop {
+  z-index: 20;
+}
+
+.review-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.review-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-item:last-child {
+  border-bottom: none;
+}
+
+.review-item-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.review-item-due {
+  flex: none;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.review-item-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+  margin-left: auto;
+}
+
+.review-act {
+  height: 26px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--field);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.review-act:hover {
+  color: var(--text);
+  background: var(--field-hover);
+}
+
+.review-act:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.review-date-input {
+  height: 26px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 8px;
+  outline: none;
+}
+
+.review-date-input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* ============================================================
    今天的工作台：过期置顶折叠组 + 今天 pin
    ============================================================ */
 

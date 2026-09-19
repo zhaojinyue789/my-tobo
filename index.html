@@ -92,6 +92,18 @@
       </div>
     </div>
 
+    <div id="review-panel" class="modal-backdrop review-backdrop hidden">
+      <div class="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
+        <h2 id="review-title" class="modal-title">昨日回顾</h2>
+        <p id="review-summary" class="modal-hint"></p>
+        <ul id="review-list" class="review-list"></ul>
+        <p id="review-empty" class="modal-hint hidden">昨天没有留下未完成项，干得漂亮！</p>
+        <div class="modal-actions">
+          <button id="review-close" class="modal-btn primary" type="button">开始今天</button>
+        </div>
+      </div>
+    </div>
+
     <div id="sync-modal" class="modal-backdrop hidden">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sync-modal-title">
         <h2 id="sync-modal-title" class="modal-title">同步设置</h2>
