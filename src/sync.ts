@@ -5,6 +5,7 @@ export interface SyncConfig {
   token: string;
 }
 
+/** 旧版混存键（{gistId, token}），仅用于启动时一次性迁移 */
 const CONFIG_KEY = "my-tobo.sync";
 const LAST_SYNC_KEY = "my-tobo.sync.lastSync";
 const GIST_FILENAME = "my-tobo.json";
@@ -27,24 +28,156 @@ export interface SyncStatus {
   lastSync?: number;
 }
 
-export function loadSyncConfig(): SyncConfig | null {
-  try {
-    const raw = localStorage.getItem(CONFIG_KEY);
-    if (!raw) return null;
-    const cfg: unknown = JSON.parse(raw);
-    if (
-      typeof cfg !== "object" ||
-      cfg === null ||
-      typeof (cfg as SyncConfig).gistId !== "string" ||
-      typeof (cfg as SyncConfig).token !== "string" ||
-      (cfg as SyncConfig).gistId === "" ||
-      (cfg as SyncConfig).token === ""
-    ) {
+// ---------- 配置与 Token 存取 ----------
+// Token 属敏感信息：Tauri 桌面端存 Store 插件文件（app_data_dir/my-tobo.json，与网页存储隔离，
+// 清浏览器数据不丢失）；浏览器 / PWA 端回退 localStorage。gistId 非敏感，始终存 localStorage。
+// CONFIG_KEY（旧版 {gistId, token} 混存键）仅用于启动时一次性迁移。
+
+const GIST_ID_KEY = "my-tobo.sync.gistId";
+const TOKEN_FALLBACK_KEY = "my-tobo.token";
+const TOKEN_FILE_KEY = "github_token";
+
+interface StoreLike {
+  get<T>(key: string): Promise<T | undefined>;
+  set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<unknown>;
+  save(): Promise<void>;
+}
+
+let tokenCache: string | null = null;
+let storePromise: Promise<StoreLike | null> | undefined;
+
+/** Tauri 环境才加载 Store；浏览器 / PWA 返回 null 走 localStorage 回退 */
+function getStore(): Promise<StoreLike | null> {
+  if (!("__TAURI_INTERNALS__" in window)) return Promise.resolve(null);
+  storePromise ??= import("@tauri-apps/plugin-store")
+    .then((m) => m.load("my-tobo.json", { autoSave: false }))
+    .catch((err) => {
+      console.error("[my-tobo] Store 初始化失败，Token 回退 localStorage：", err);
       return null;
+    });
+  return storePromise;
+}
+
+/** Token 读取：Store 优先，读失败按未保存处理（UI 引导重输），不抛错 */
+async function vaultGet(): Promise<string | null> {
+  const store = await getStore();
+  if (!store) return safeGet(TOKEN_FALLBACK_KEY);
+  try {
+    const token = await store.get<string>(TOKEN_FILE_KEY);
+    return typeof token === "string" && token !== "" ? token : null;
+  } catch (err) {
+    console.error("[my-tobo] Token Store 读取失败：", err);
+    return null;
+  }
+}
+
+/** Token 写入/清除：显式 save() 落盘；失败返回 false，由调用方决定提示 */
+async function vaultSet(token: string | null): Promise<boolean> {
+  const store = await getStore();
+  if (!store) {
+    if (token === null) safeRemove(TOKEN_FALLBACK_KEY);
+    else return safeSet(TOKEN_FALLBACK_KEY, token);
+    return true;
+  }
+  try {
+    if (token === null) await store.delete(TOKEN_FILE_KEY);
+    else await store.set(TOKEN_FILE_KEY, token);
+    await store.save();
+    return true;
+  } catch (err) {
+    console.error("[my-tobo] Token Store 写入失败：", err);
+    return false;
+  }
+}
+
+/** 启动时初始化：装载 Token 并迁移旧版混存配置（幂等；迁移失败保留旧键，下次重试） */
+async function initSyncStorage(): Promise<void> {
+  const storedToken = await vaultGet();
+  const rawLegacy = safeGet(CONFIG_KEY);
+  if (rawLegacy === null) {
+    tokenCache = storedToken;
+    return;
+  }
+  let legacyGistId = "";
+  let legacyToken = "";
+  try {
+    const parsed: unknown = JSON.parse(rawLegacy);
+    if (typeof parsed === "object" && parsed !== null) {
+      const p = parsed as Partial<SyncConfig>;
+      if (typeof p.gistId === "string") legacyGistId = p.gistId;
+      if (typeof p.token === "string") legacyToken = p.token;
     }
-    return cfg as SyncConfig;
+  } catch (err) {
+    console.warn("[my-tobo] 旧同步配置解析失败，忽略：", err);
+  }
+  tokenCache = storedToken ?? legacyToken;
+  const persisted = tokenCache === null || (await vaultSet(tokenCache));
+  if (persisted && (legacyGistId === "" || safeSet(GIST_ID_KEY, legacyGistId))) {
+    safeRemove(CONFIG_KEY);
+  } else {
+    console.error("[my-tobo] 同步配置迁移未完成，保留旧键，下次启动重试");
+  }
+}
+
+let storageReady: Promise<void> | undefined;
+
+/** 首次用到配置前确保 Token 已装载；同步读缓存的调用方无需感知异步 */
+function ensureStorageReady(): Promise<void> {
+  storageReady ??= initSyncStorage();
+  return storageReady;
+}
+
+function safeGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+function safeSet(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.error("[my-tobo] localStorage 写入失败：", key, err);
+    return false;
+  }
+}
+
+function safeRemove(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* 忽略 */
+  }
+}
+
+export function loadSyncConfig(): SyncConfig | null {
+  const gistId = safeGet(GIST_ID_KEY)?.trim() ?? "";
+  if (gistId === "" || tokenCache === null || tokenCache === "") return null;
+  return { gistId, token: tokenCache };
+}
+
+/** gistId 与 Token 分开读：Token 丢失时设置弹窗仍能回填 gistId，用户只需重输 Token */
+export function loadSyncGistId(): string {
+  return safeGet(GIST_ID_KEY)?.trim() ?? "";
+}
+
+export async function saveSyncConfig(cfg: SyncConfig | null): Promise<boolean> {
+  try {
+    if (cfg) {
+      if (!safeSet(GIST_ID_KEY, cfg.gistId)) return false;
+      tokenCache = cfg.token;
+      return await vaultSet(cfg.token);
+    }
+    tokenCache = null;
+    safeRemove(GIST_ID_KEY);
+    return await vaultSet(null);
+  } catch (err) {
+    console.error("同步配置写入失败：", err);
+    return false;
   }
 }
 
@@ -57,21 +190,41 @@ function normalizeGistId(raw: string): string {
   return segments.length > 0 ? segments[segments.length - 1] : input;
 }
 
-export function saveSyncConfig(cfg: SyncConfig | null): boolean {
+function getLastSync(): number | undefined {
+  const raw = safeGet(LAST_SYNC_KEY);
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// ---------- Gist 响应缓存（ETag 条件请求） ----------
+// 缓存上次 GET 的 ETag 与响应体：下次 GET 带 If-None-Match，远端未变化时
+// GitHub 返回 304（无响应体），直接复用缓存，省流量且对配额友好。
+const ETAG_KEY = "my-tobo.sync.etag";
+const GIST_CACHE_KEY = "my-tobo.sync.gistCache";
+
+function readEtag(): string | null {
+  const etag = safeGet(ETAG_KEY);
+  return etag ? etag : null;
+}
+
+function writeEtag(etag: string | null): void {
+  if (etag === null) safeRemove(ETAG_KEY);
+  else safeSet(ETAG_KEY, etag);
+}
+
+function readGistCache(): Record<string, unknown> | null {
+  const raw = safeGet(GIST_CACHE_KEY);
+  if (!raw) return null;
   try {
-    if (cfg) localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
-    else localStorage.removeItem(CONFIG_KEY);
-    return true;
-  } catch (err) {
-    console.error("同步配置写入失败：", err);
-    return false;
+    const data: unknown = JSON.parse(raw);
+    return typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
+  } catch {
+    return null;
   }
 }
 
-function getLastSync(): number | undefined {
-  const raw = localStorage.getItem(LAST_SYNC_KEY);
-  const n = raw ? Number(raw) : NaN;
-  return Number.isFinite(n) ? n : undefined;
+function writeGistCache(gist: Record<string, unknown>): void {
+  safeSet(GIST_CACHE_KEY, JSON.stringify(gist));
 }
 
 async function gistRequest(
@@ -80,19 +233,32 @@ async function gistRequest(
   body?: unknown,
 ): Promise<Record<string, unknown>> {
   const url = method === "POST" ? `${API}/gists` : `${API}/gists/${cfg.gistId}`;
+  const isGet = method === "GET";
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${cfg.token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  // 条件请求：带上次 ETag，远端未变化时服务端返回 304
+  const cachedEtag = isGet ? readEtag() : null;
+  if (cachedEtag) headers["If-None-Match"] = cachedEtag;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       method,
-      headers: {
-        Authorization: `Bearer ${cfg.token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
+    if (isGet && res.status === 304) {
+      const cached = readGistCache();
+      if (cached) return cached;
+      // 防御：有 ETag 却无缓存（异常场景）时清掉 ETag，下轮直接拉全量
+      writeEtag(null);
+      throw new Error("本地响应缓存缺失，已改为重新拉取");
+    }
     if (!res.ok) {
       let detail = "";
       try {
@@ -106,7 +272,16 @@ async function gistRequest(
         throw new Error("超出 GitHub API 速率限制，请稍后再试（403）");
       throw new Error(`GitHub API 错误 ${res.status}${detail ? `：${detail}` : ""}`);
     }
-    return (await res.json()) as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
+    if (isGet) {
+      const etag = res.headers.get("ETag");
+      if (etag) {
+        // 先写响应缓存再写 ETag：中途崩溃最多浪费一次全量请求，不会出现“有 ETag 无缓存”
+        writeGistCache(data);
+        writeEtag(etag);
+      }
+    }
+    return data;
   } finally {
     clearTimeout(timer);
   }
@@ -177,10 +352,10 @@ export class SyncController {
     return loadSyncConfig() !== null;
   }
 
-  saveConfig(cfg: SyncConfig | null): boolean {
+  async saveConfig(cfg: SyncConfig | null): Promise<boolean> {
     // 入库前做 Gist ID 容错，支持直接粘贴完整 Gist 地址
     if (cfg) cfg = { ...cfg, gistId: normalizeGistId(cfg.gistId) };
-    if (!saveSyncConfig(cfg)) return false;
+    if (!(await saveSyncConfig(cfg))) return false;
     this.emit(cfg ? { state: "idle", message: "" } : { state: "unconfigured", message: "" });
     return true;
   }
@@ -217,6 +392,7 @@ export class SyncController {
 
   /** 启动时拉取 + 手动同步共用 */
   async syncNow(): Promise<void> {
+    await ensureStorageReady();
     const cfg = loadSyncConfig();
     if (!cfg) {
       this.emit({ state: "unconfigured", message: "" });
@@ -254,7 +430,7 @@ export class SyncController {
         this.onLocalChange();
       }
       this.lastSync = Date.now();
-      localStorage.setItem(LAST_SYNC_KEY, String(this.lastSync));
+      safeSet(LAST_SYNC_KEY, String(this.lastSync));
       this.emit({ state: "ok", message: "", lastSync: this.lastSync });
     } catch (err) {
       const message =
@@ -283,7 +459,9 @@ export class SyncController {
       files: { [GIST_FILENAME]: { content: gistPayload(loadTodos()) } },
     })) as { id?: string; html_url?: string };
     if (!created.id) throw new Error("创建 Gist 失败：响应中没有 id");
-    this.saveConfig({ gistId: created.id, token });
+    if (!(await this.saveConfig({ gistId: created.id, token }))) {
+      throw new Error("Gist 已创建，但 Token 本地保存失败，请在设置中重新保存");
+    }
     return created.html_url ?? `https://gist.github.com/${created.id}`;
   }
 

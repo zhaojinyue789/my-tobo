@@ -14,5 +14,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vite-plugin-singlefile": "^2.3.3"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-store": "^2.4.5"
   }
 }

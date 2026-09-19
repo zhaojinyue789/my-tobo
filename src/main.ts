@@ -7,7 +7,7 @@ import {
   type Todo,
 } from "./todo";
 import { filterTodos, renderList, type Filter } from "./ui";
-import { SyncController, loadSyncConfig, type SyncStatus } from "./sync";
+import { SyncController, loadSyncConfig, loadSyncGistId, type SyncStatus } from "./sync";
 import "./style.css";
 
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
@@ -160,9 +160,11 @@ syncNowBtn.addEventListener("click", () => void sync.syncNow());
 
 function openModal(): void {
   const cfg = loadSyncConfig();
-  gistIdInput.value = cfg?.gistId ?? "";
+  // Token 读不到时（Store 读取失败/换机等）保留 gistId 回填，用户只需重输 Token
+  gistIdInput.value = cfg?.gistId ?? loadSyncGistId();
   gistTokenInput.value = cfg?.token ?? "";
   modalError.classList.add("hidden");
+  if (!cfg && gistIdInput.value) showModalError("未读取到已保存的 Token，请重新输入");
   modal.classList.remove("hidden");
   gistTokenInput.focus();
 }
@@ -203,11 +205,14 @@ gistCreateBtn.addEventListener("click", async () => {
   }
 });
 
-gistSaveBtn.addEventListener("click", () => {
+gistSaveBtn.addEventListener("click", async () => {
   const token = gistTokenInput.value.trim();
   const gistId = gistIdInput.value.trim();
   if (!token || !gistId) return showModalError("Token 和 Gist ID 都需要填写");
-  if (!sync.saveConfig({ token, gistId })) {
+  setModalBusy(true);
+  const ok = await sync.saveConfig({ token, gistId });
+  setModalBusy(false);
+  if (!ok) {
     showModalError("本地存储写入失败，配置未保存，请检查存储空间");
     return;
   }
@@ -216,7 +221,7 @@ gistSaveBtn.addEventListener("click", () => {
 });
 
 gistDisconnectBtn.addEventListener("click", () => {
-  sync.saveConfig(null);
+  void sync.saveConfig(null);
   gistTokenInput.value = "";
   gistIdInput.value = "";
   modal.classList.add("hidden");

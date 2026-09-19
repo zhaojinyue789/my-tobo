@@ -17,7 +17,7 @@ npm run dev         # 仅前端，浏览器 / 手机 PWA 调试
 3. 粘贴 Token；没有 Gist 就点「创建新私密 Gist」，已有则填 Gist ID（直接粘贴完整 Gist 页面地址也可以，会自动提取 ID）。
 4. 另一端（手机 PWA 或电脑）填入相同 Token 与 Gist ID 即可双端同步。
 
-> ⚠️ **Token 安全**：Token 等同于你 GitHub 账号在 gist 范围内的操作权限，请勿泄露给他人，泄漏后立即到 GitHub 后台吊销。当前版本 Token 明文保存在本机 localStorage 中，请勿在不可信设备或共用电脑上配置同步。
+> ⚠️ **Token 安全**：Token 等同于你 GitHub 账号在 gist 范围内的操作权限，请勿泄露给他人，泄漏后立即到 GitHub 后台吊销。桌面端（Tauri）Token 保存于应用数据目录的 Store 文件（与网页存储隔离，清浏览器数据不丢失）；浏览器 / PWA 端保存在 localStorage。两者均为本机明文落盘（Store 非加密存储），请勿在不可信设备或共用电脑上配置同步；如需加密保管可后续迁移系统钥匙串 / stronghold。
 
 ## 构建单文件
 
