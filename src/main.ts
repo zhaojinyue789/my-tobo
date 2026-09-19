@@ -21,6 +21,14 @@ import {
 } from "./ui";
 import { ensurePermission, notifyTodoDue } from "./notify";
 import { SyncController, loadSyncConfig, loadSyncGistId, type SyncStatus } from "./sync";
+import {
+  CommandStack,
+  loadUndoState,
+  makeClearAllCommand,
+  makeCreateCommand,
+  makeDeleteCommand,
+  makeUpdateCommand,
+} from "./undo";
 import "./style.css";
 
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
@@ -49,6 +57,8 @@ const gistCloseBtn = document.querySelector<HTMLButtonElement>("#gist-close")!;
 const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
 
 let todos: Todo[] = loadTodos();
+/** 命令栈：仅本地持久化、不同步 Gist；命令应用与入栈见各交互处理器 */
+const stack = new CommandStack(loadUndoState());
 /** 视图态：只影响渲染，不碰数据、不写存储、不触发同步 */
 let view: View = { category: "__all__", status: "all" };
 /** 手动新建的分类：仅内存（不持久化，重启消失且无数据风险），与派生集合合并后进入各下拉框 */
@@ -183,6 +193,7 @@ form.addEventListener("submit", (e) => {
   const todo = createTodo(text);
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
   todos.unshift(todo);
+  stack.push(makeCreateCommand(todo));
   input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
   persist();
   // 即时到期检查：新建表单暂无日期输入，当前恒不触发；为后续表单扩展预留（任务 D）
@@ -229,12 +240,16 @@ listEl.addEventListener("click", (e) => {
   const item = target.closest<HTMLElement>(".todo-item");
   if (!item) return;
   const id = item.dataset.id;
+  const current = todos.find((t) => t.id === id);
+  if (!current) return;
   if (target.classList.contains("todo-toggle")) {
-    todos = todos.map((t) =>
-      t.id === id ? { ...t, completed: !t.completed, updatedAt: Date.now() } : t,
-    );
+    const completed = !current.completed;
+    todos = todos.map((t) => (t.id === id ? { ...t, completed, updatedAt: Date.now() } : t));
+    stack.push(makeUpdateCommand(id, { completed: current.completed }, { completed }));
   } else if (target.classList.contains("todo-delete")) {
+    if (isDeleted(current)) return;
     todos = todos.map((t) => (t.id === id ? markDeleted(t) : t));
+    stack.push(makeDeleteCommand(current));
   } else {
     return;
   }
@@ -258,6 +273,13 @@ listEl.addEventListener("change", (e) => {
       updated = { ...t, category: next, updatedAt: Date.now() };
       return updated;
     });
+    stack.push(
+      makeUpdateCommand(
+        current.id,
+        { category: current.category ?? null },
+        { category: next ?? null },
+      ),
+    );
   } else if (target.classList.contains("todo-due")) {
     const next = isValidDueDate(target.value) ? target.value : undefined; // 非法输入按清空处理，不报错
     if ((current.dueDate ?? undefined) === (next ?? undefined)) return;
@@ -266,6 +288,9 @@ listEl.addEventListener("change", (e) => {
       updated = { ...t, dueDate: next, updatedAt: Date.now() };
       return updated;
     });
+    stack.push(
+      makeUpdateCommand(current.id, { dueDate: current.dueDate ?? null }, { dueDate: next ?? null }),
+    );
   } else {
     return;
   }
@@ -349,18 +374,21 @@ addCategoryBtn.addEventListener("click", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  const now = Date.now();
-  todos = todos.map((t) =>
-    !isDeleted(t) && t.completed ? { ...t, deletedAt: now, updatedAt: now } : t,
-  );
+  // 批量清除记为单条命令（可一次撤销恢复）；无已完成条目时不产生命令
+  const targets = todos.filter((t) => !isDeleted(t) && t.completed);
+  if (targets.length === 0) return;
+  todos = todos.map((t) => (!isDeleted(t) && t.completed ? markDeleted(t) : t));
+  stack.push(makeClearAllCommand(targets));
   persist();
 });
 
 // 清除全部：confirm 二次确认后给全部现存条目打墓碑（不能物理清空数组，
-// 否则远端仍存有这些条目，下次同步会按 LWW 全部复活）；persist() 内部触发防抖自动同步
+// 否则远端仍存有这些条目，下次同步会按 LWW 全部复活）；记为单条命令，一次撤销可全部恢复
 clearAllBtn.addEventListener("click", () => {
-  if (!confirm("确定要清除全部待办吗？清除后不可恢复")) return;
+  if (!confirm("确定要清除全部待办吗？清除后可通过撤销恢复")) return;
+  const targets = todos.filter((t) => !isDeleted(t));
   todos = todos.map((t) => (isDeleted(t) ? t : markDeleted(t)));
+  stack.push(makeClearAllCommand(targets));
   persist();
 });
 
