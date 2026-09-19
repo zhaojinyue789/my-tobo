@@ -36,6 +36,34 @@ export function normalizeOrder(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
 }
 
+/** 排序步长：相邻序值的基础间隔；取 2 的幂保证连续取中点仍为整数（防精度塌陷） */
+export const ORDER_STEP = 1024;
+
+/**
+ * 推导序：缺 order 的条目按「createdAt 升序名次」× STEP 取值，与显式值同刻度、可安全混比。
+ * 相对顺序只由 createdAt 决定（推导值随名次单调），列表构成变化只平移绝对值、不改变相对次序。
+ */
+function derivedOrderMap(todos: Todo[]): Map<string, number> {
+  const ranked = [...todos].sort(
+    (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  const map = new Map<string, number>();
+  ranked.forEach((t, i) => map.set(t.id, (i + 1) * ORDER_STEP));
+  return map;
+}
+
+/**
+ * 稳定排序（显示顺序的唯一权威）：order（缺失用推导值）为主键升序，相等比 createdAt，再相等比 id。
+ * 全序确定 → 同数据必得同顺序，双端一致且列表不闪烁。
+ */
+export function sortTodos(todos: Todo[]): Todo[] {
+  const derived = derivedOrderMap(todos);
+  const eff = (t: Todo): number => t.order ?? derived.get(t.id) ?? 0;
+  return [...todos].sort(
+    (a, b) => eff(a) - eff(b) || a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1),
+  );
+}
+
 /** 分类清洗：trim 后非空、≤20 字符、无禁用字符才合法；否则视为未填写 */
 export function normalizeCategory(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;

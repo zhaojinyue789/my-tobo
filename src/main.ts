@@ -7,6 +7,7 @@ import {
   markDeleted,
   normalizeCategory,
   saveTodos,
+  sortTodos,
   type Todo,
 } from "./todo";
 import {
@@ -83,7 +84,7 @@ function render(): void {
 
   renderList(
     listEl,
-    applyFilter(todos, view),
+    applyFilter(sortTodos(todos), view),
     todos.some((t) => !isDeleted(t))
       ? "该筛选下暂无待办"
       : "这里空空如也，添加一条待办吧～",
@@ -196,7 +197,8 @@ form.addEventListener("submit", (e) => {
   const category = rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
   const todo = createTodo(text);
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
-  todos.unshift(todo);
+  // 追加到数组末尾：显示顺序由 sortTodos（order/createdAt 升序）权威决定，新项默认排末尾（DECISIONS.md D1）
+  todos.push(todo);
   stack.push(makeCreateCommand(todo));
   input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
   persist();
