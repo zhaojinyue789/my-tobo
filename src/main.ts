@@ -30,6 +30,7 @@ const { filterCategory, filterStatus, newCategoryInput, addCategoryBtn, category
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
+const clearAllBtn = document.querySelector<HTMLButtonElement>("#clear-all")!;
 
 const syncDot = document.querySelector<HTMLElement>("#sync-dot")!;
 const syncText = document.querySelector<HTMLElement>("#sync-text")!;
@@ -315,6 +316,14 @@ clearBtn.addEventListener("click", () => {
   todos = todos.map((t) =>
     !isDeleted(t) && t.completed ? { ...t, deletedAt: now, updatedAt: now } : t,
   );
+  persist();
+});
+
+// 清除全部：confirm 二次确认后给全部现存条目打墓碑（不能物理清空数组，
+// 否则远端仍存有这些条目，下次同步会按 LWW 全部复活）；persist() 内部触发防抖自动同步
+clearAllBtn.addEventListener("click", () => {
+  if (!confirm("确定要清除全部待办吗？清除后不可恢复")) return;
+  todos = todos.map((t) => (isDeleted(t) ? t : markDeleted(t)));
   persist();
 });
 

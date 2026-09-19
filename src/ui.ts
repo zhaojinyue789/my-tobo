@@ -59,11 +59,15 @@ export interface ToolbarRefs {
   categoryHint: HTMLElement;
 }
 
-/** 顶部工具栏：构建后插在列表容器之前 */
+/** 顶部工具栏：筛选行 + 「新建分类」折叠面板；构建后插在列表容器之前 */
 export function buildToolbar(before: HTMLElement): ToolbarRefs {
   const root = document.createElement("div");
   root.id = "toolbar";
   root.className = "toolbar";
+
+  // 第一行：两个筛选下拉
+  const filters = document.createElement("div");
+  filters.className = "toolbar-filters";
 
   const filterCategory = document.createElement("select");
   filterCategory.id = "filter-category";
@@ -79,17 +83,29 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
     buildSelectOption("active", "未完成"),
     buildSelectOption("completed", "已完成"),
   );
+  filters.append(filterCategory, filterStatus);
+
+  // 第二行：新建分类折叠面板（原生 details/summary，无需额外事件绑定）
+  const panel = document.createElement("details");
+  panel.className = "cat-panel";
+
+  const summary = document.createElement("summary");
+  summary.className = "cat-panel-summary";
+  summary.textContent = "新建分类";
+
+  const panelBody = document.createElement("div");
+  panelBody.className = "cat-panel-body";
 
   const newCategoryInput = document.createElement("input");
   newCategoryInput.id = "new-category";
   newCategoryInput.className = "new-category";
   newCategoryInput.type = "text";
   newCategoryInput.maxLength = 20;
-  newCategoryInput.placeholder = "新建分类";
+  newCategoryInput.placeholder = "输入分类名，如：工作";
 
   const addCategoryBtn = document.createElement("button");
   addCategoryBtn.id = "add-category";
-  addCategoryBtn.className = "add-category";
+  addCategoryBtn.className = "btn btn-secondary";
   addCategoryBtn.type = "button";
   addCategoryBtn.textContent = "添加分类";
 
@@ -98,7 +114,9 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   categoryHint.className = "category-hint hidden";
   categoryHint.setAttribute("role", "status");
 
-  root.append(filterCategory, filterStatus, newCategoryInput, addCategoryBtn, categoryHint);
+  panelBody.append(newCategoryInput, addCategoryBtn, categoryHint);
+  panel.append(summary, panelBody);
+  root.append(filters, panel);
   before.before(root);
   return { root, filterCategory, filterStatus, newCategoryInput, addCategoryBtn, categoryHint };
 }
@@ -159,6 +177,7 @@ export function renderList(
     dueInput.className = "todo-due";
     dueInput.setAttribute("aria-label", "截止日期");
     dueInput.value = todo.dueDate ?? ""; // 属性赋值不触发 change，无回写死循环
+    if (!todo.dueDate) dueInput.classList.add("is-empty"); // 空值时 CSS 只显示日历图标
 
     const del = document.createElement("button");
     del.type = "button";
@@ -166,7 +185,12 @@ export function renderList(
     del.setAttribute("aria-label", "删除");
     del.textContent = "✕";
 
-    li.append(toggle, label, categorySelect, dueInput, del);
+    // 分类 + 日期包进右侧元信息组，与文本对齐
+    const meta = document.createElement("div");
+    meta.className = "todo-meta";
+    meta.append(categorySelect, dueInput);
+
+    li.append(toggle, label, meta, del);
     fragment.append(li);
   }
   listEl.replaceChildren(fragment);

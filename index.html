@@ -19,8 +19,18 @@
           <span id="sync-text"></span>
         </span>
         <span class="sync-actions">
-          <button id="sync-now" class="sync-btn" type="button" title="立即同步" aria-label="立即同步">⟳</button>
-          <button id="sync-settings" class="sync-btn" type="button" title="同步设置" aria-label="同步设置">⚙</button>
+          <button id="sync-now" class="sync-btn" type="button" title="立即同步" aria-label="立即同步">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+            </svg>
+          </button>
+          <button id="sync-settings" class="sync-btn" type="button" title="同步设置" aria-label="同步设置">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
         </span>
       </div>
       <div id="storage-warning" class="storage-warning hidden">
@@ -34,12 +44,15 @@
           placeholder="想做点什么？"
           maxlength="200"
         />
-        <button type="submit" class="todo-add">添加</button>
+        <button type="submit" class="btn btn-primary todo-add">添加</button>
       </form>
       <ul id="todo-list" class="todo-list"></ul>
       <footer id="todo-footer" class="todo-footer hidden">
         <span id="todo-count"></span>
-        <button id="clear-completed" class="clear-completed">清除已完成</button>
+        <span class="todo-footer-actions">
+          <button id="clear-completed" class="clear-completed" type="button">清除已完成</button>
+          <button id="clear-all" class="clear-all" type="button">清除全部</button>
+        </span>
       </footer>
     </main>
 
