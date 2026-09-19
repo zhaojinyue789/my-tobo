@@ -1,5 +1,6 @@
 import {
   createTodo,
+  hasDuplicateOrders,
   isDeleted,
   isOverdue,
   isValidDueDate,
@@ -7,6 +8,7 @@ import {
   markDeleted,
   nextAppendOrder,
   normalizeCategory,
+  planRebalance,
   saveTodos,
   sortTodos,
   type Todo,
@@ -31,6 +33,7 @@ import {
   makeClearAllCommand,
   makeCreateCommand,
   makeDeleteCommand,
+  makeRebalanceCommand,
   makeUpdateCommand,
 } from "./undo";
 import "./style.css";
@@ -72,6 +75,7 @@ const sync = new SyncController({
   onTodos: (merged) => {
     todos = merged;
     render();
+    scheduleRebalanceIfNeeded();
   },
   onStatus: renderSyncStatus,
 });
@@ -118,6 +122,24 @@ function persist(): void {
   storageWarning.classList.toggle("hidden", saveTodos(todos));
   sync.onLocalChange();
   render();
+}
+
+// ---------- 批量重整（合并后序值冲突的归一） ----------
+
+let rebalanceQueued = false;
+
+/** 合并结果存在相等有效序值时调度重整；同一 tick 内多次触发经 queueMicrotask 去抖只重整一次 */
+function scheduleRebalanceIfNeeded(): void {
+  if (rebalanceQueued || !hasDuplicateOrders(todos)) return;
+  rebalanceQueued = true;
+  queueMicrotask(() => {
+    rebalanceQueued = false;
+    const plan = planRebalance(todos);
+    if (!plan) return;
+    todos = plan.todos;
+    stack.push(makeRebalanceCommand(plan)); // 重整也是可撤销命令（DECISIONS.md D9）
+    persist(); // 重整产生的全部序号写入经既有防抖链路合并为一次推送
+  });
 }
 
 // ---------- 过期通知（阶段 5）----------
