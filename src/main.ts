@@ -19,6 +19,7 @@ import {
   clearFocusState,
   computeFocusElapsed,
   formatHMS,
+  loadFocusState,
   loadTab,
   saveFocusState,
   saveTab,
@@ -101,6 +102,7 @@ const sync = new SyncController({
     todos = merged;
     render();
     scheduleRebalanceIfNeeded();
+    reconcileFocusAfterMerge();
   },
   onStatus: renderSyncStatus,
 });
@@ -898,6 +900,48 @@ document.addEventListener("keydown", (e) => {
   closeFocusOverlay();
 });
 
+/** 关标签重开恢复（DECISIONS.md D19）：同日运行中 ⇒ 恢复遮罩继续计时；跨日 ⇒ 自动转暂停；条目已删 ⇒ 丢弃 */
+function restoreFocusOnLoad(): void {
+  const saved = loadFocusState();
+  if (!saved) return;
+  const todo = todos.find((t) => t.id === saved.id && !isDeleted(t) && !t.completed);
+  if (!todo) {
+    clearFocusState();
+    return;
+  }
+  const sameDay = new Date(saved.savedAt).toDateString() === new Date().toDateString();
+  focusSession = { id: saved.id, startedAt: sameDay ? saved.startedAt : null, accumulatedMs: saved.accumulatedMs };
+  if (focusSession.startedAt != null) {
+    // 回填条目镜像（不 bump updatedAt，本地状态不参与 LWW）
+    todos = todos.map((t) =>
+      t.id === focusSession!.id ? { ...t, focusStartedAt: focusSession!.startedAt! } : t,
+    );
+    persistLocalOnly();
+  }
+  if (sameDay && focusSession.startedAt != null) openFocusOverlay();
+}
+
+/** 合并竞态护栏（DECISIONS.md D14）：LWW 整条覆盖可能冲掉条目 focus 镜像，用 todoview_focus 回填 */
+function reconcileFocusAfterMerge(): void {
+  if (!focusSession) return;
+  const t = focusTarget();
+  if (!t || isDeleted(t) || t.completed) {
+    // 条目已被远端删除或完成：时长能结算就结算，会话一律关闭
+    if (t && !isDeleted(t)) settleFocus();
+    else {
+      focusSession = null;
+      clearFocusState();
+    }
+    stopFocusTimer();
+    closeFocusOverlay();
+    return;
+  }
+  if (focusSession.startedAt != null && t.focusStartedAt !== focusSession.startedAt) {
+    todos = todos.map((x) => (x.id === t.id ? { ...x, focusStartedAt: focusSession!.startedAt! } : x));
+    persistLocalOnly();
+  }
+}
+
 // ---------- 视图 tab（今天/全部） ----------
 
 function setTab(tab: TodayTab): void {
@@ -1080,6 +1124,8 @@ gistDisconnectBtn.addEventListener("click", () => {
 
 input.focus();
 render();
+// 启动恢复专注会话（同日续跑 / 跨日转暂停，DECISIONS.md D19）
+restoreFocusOnLoad();
 // 启动批量过期通知：N 条过期未通知各发一条；权限未授予/失败静默降级
 void notifyOverdueStartup();
 // 启动即拉取一次远端（未配置时静默显示“未开启同步”）
@@ -1088,7 +1134,17 @@ void sync.syncNow();
 sync.startAutoSync();
 // 窗口回到前台立即拉一次（手机切回 App、电脑切回窗口时感知另一端改动）
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") void sync.syncNow();
+  if (document.visibilityState === "visible") {
+    // 专注计时校准：差值法按时间戳重算，后台中断时长自然连续（DECISIONS.md D18）
+    if (focusSession && !focusOverlay.classList.contains("hidden")) {
+      renderFocusTimer();
+      startFocusTimer();
+    }
+    void sync.syncNow();
+  } else {
+    // 后台降频：不做无谓 tick（时长由时间戳保证，与 sync 侧后台策略同构）
+    stopFocusTimer();
+  }
 });
 // 网络恢复立即同步
 window.addEventListener("online", () => void sync.syncNow());
