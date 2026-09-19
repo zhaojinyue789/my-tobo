@@ -21,12 +21,16 @@ export const UNDO_LIMIT = 50;
 const UNDO_STORAGE_KEY = "my-tobo.undo";
 const UNDO_STATE_VERSION = 1;
 
-/** update 命令可修改的字段；null 表示清除该字段（还原为未填写） */
+/** update 命令可修改的字段；null 表示清除该字段（还原为未填写/自动三态） */
 export interface UpdateChanges {
   text?: string | null;
   completed?: boolean;
   category?: string | null;
   dueDate?: string | null;
+  /** today 的 null = 还原为自动三态（undefined） */
+  today?: boolean | null;
+  /** allDay 的 null = 还原为缺省（undefined，视为全天） */
+  allDay?: boolean | null;
 }
 
 export type Command =
@@ -161,6 +165,12 @@ function resolveChanges(changes: UpdateChanges): Partial<Todo> {
   }
   if (changes.dueDate !== undefined) {
     out.dueDate = changes.dueDate === null ? undefined : changes.dueDate;
+  }
+  if (changes.today !== undefined) {
+    out.today = changes.today === null ? undefined : changes.today;
+  }
+  if (changes.allDay !== undefined) {
+    out.allDay = changes.allDay === null ? undefined : changes.allDay;
   }
   return out;
 }

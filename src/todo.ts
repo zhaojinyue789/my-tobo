@@ -15,6 +15,14 @@ export interface Todo {
   notified?: boolean;
   /** 手动排序序号（升序 = 界面自上而下）：旧数据缺失时显示按 createdAt 稳定推导，首次拖拽才物化 */
   order?: number;
+  /** 在今日视图（三态，见 DESIGN P2-2）：true=手动加入；false=手动移出（不再被 dueDate 自动拉回）；缺省=自动（dueDate≤今天） */
+  today?: boolean;
+  /** 全天事项（预留字段，缺省视为全天） */
+  allDay?: boolean;
+  /** 当前专注会话起点（仅本地、不进 Gist；暂停/结束时清除；权威运行态在 todoview_focus） */
+  focusStartedAt?: number;
+  /** 累计专注毫秒（仅本地、不进 Gist；暂停/完成/跳过时累加） */
+  focusTotalMs?: number;
 }
 
 const STORAGE_KEY = "my-tobo.todos";
@@ -34,6 +42,16 @@ export function isDeleted(todo: Todo): boolean {
 /** order 清洗：仅接受安全整数；非整数 / NaN / ±Infinity / 越界一律视为缺失（走 createdAt 推导分支） */
 export function normalizeOrder(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
+}
+
+/** 布尔字段清洗：非布尔按缺失兜底（旧数据全缺省） */
+function normalizeBooleanField(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+/** 毫秒时长清洗：非有限非负数按缺失兜底（本地计时字段的防御性校验） */
+function normalizeMsField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 /** 排序步长：相邻序值的基础间隔；取 2 的幂保证连续取中点仍为整数（防精度塌陷） */
@@ -323,7 +341,7 @@ export function loadTodos(): Todo[] {
   }
 }
 
-/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/notified/order，读取时补齐；新字段非法值按未填写处理，条目保留 */
+/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/notified/order/today/allDay/focus*，读取时补齐；新字段非法值按未填写处理，条目保留 */
 function migrate(item: Todo): Todo {
   return {
     ...item,
@@ -333,6 +351,10 @@ function migrate(item: Todo): Todo {
     dueDate: isValidDueDate(item.dueDate) ? item.dueDate : undefined,
     notified: typeof item.notified === "boolean" ? item.notified : false,
     order: normalizeOrder(item.order),
+    today: normalizeBooleanField(item.today),
+    allDay: normalizeBooleanField(item.allDay),
+    focusStartedAt: normalizeMsField(item.focusStartedAt),
+    focusTotalMs: normalizeMsField(item.focusTotalMs),
   };
 }
 

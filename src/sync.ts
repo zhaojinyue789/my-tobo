@@ -308,14 +308,20 @@ function sanitizeRemoteTodo(item: unknown): Todo | null {
   ) {
     return null;
   }
-  return {
+  const cleaned: Todo = {
     ...t,
     completed: t.completed ?? false,
     category: normalizeCategory(t.category),
     dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
     notified: typeof t.notified === "boolean" ? t.notified : undefined,
     order: normalizeOrder(t.order),
+    today: typeof t.today === "boolean" ? t.today : undefined,
+    allDay: typeof t.allDay === "boolean" ? t.allDay : undefined,
   };
+  // 专注计时是设备本地状态，远端一律视为不存在（见 DECISIONS.md D13）
+  delete cleaned.focusStartedAt;
+  delete cleaned.focusTotalMs;
+  return cleaned;
 }
 
 function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
@@ -341,8 +347,16 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
   });
 }
 
+/** 本地专用字段不入 Gist：推送前剥离（专注计时是设备本地行为，DECISIONS.md D13） */
+function stripLocalOnlyFields(t: Todo): Todo {
+  const copy = { ...t };
+  delete copy.focusStartedAt;
+  delete copy.focusTotalMs;
+  return copy;
+}
+
 function gistPayload(todos: Todo[]): string {
-  return JSON.stringify({ version: 2, todos: purgeTombstones(todos) });
+  return JSON.stringify({ version: 2, todos: purgeTombstones(todos).map(stripLocalOnlyFields) });
 }
 
 interface SyncHooks {
