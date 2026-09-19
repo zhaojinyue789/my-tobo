@@ -78,3 +78,62 @@
 - 选择：放在复合筛选按钮右侧成组（30×30 图标按钮，样式沿用 sync-btn 的视觉语言），随 render 同步禁用态。
 - 理由：与既有工具栏视觉一致、不与「新建分类」触发器抢右侧位置；触摸目标在移动端经 (pointer:coarse) 适当放大。
 - 可回退：纯 UI 调整，移动 buildToolbar 中节点位置即可。
+
+# Phase 2 决策（Today Focus，2026-09-20 夜）
+
+## D12 today 的三态语义
+
+- 问题：dueDate 为今天的项「自动并入，可手动取消且不再拉回」如何只用一个 today?: boolean 表达？
+- 选择：三态——true=手动入；false=手动移出（永不被自动拉回）；undefined=自动（dueDate≤今天才入）。迁移不写 today（旧数据保持 undefined）。
+- 理由：一个字段覆盖三个状态，避免引入 todayOptOut 第二字段；「默认 false」由缺省语义自然实现（无 dueDate 且未标记 ⇒ 不在今日）；undo 的 update 命令以 null 还原 undefined，天然可撤销。
+- 可回退：改为显式双字段（today + todayOptOut），改 isTodayMember 一处 + 迁移一行。
+
+## D13 同步边界：today/allDay 同步，focus* 与 todoview_* 不同步
+
+- 问题：四个新字段与三个本地 key 哪些上 Gist？
+- 选择：today/allDay 进 Gist（推送前无特殊处理）；focusStartedAt/focusTotalMs 在 gistPayload 剥离、sanitizeRemoteTodo 对远端剥离；todoview_tab/daily/focus 仅 localStorage。
+- 理由：「哪些事在今天」是用户意图，双端必须一致（验收 3）；专注计时是设备本地行为（两端各计各的才有意义，合并不可判定）；视图 tab/日志是纯本地 UX。
+- 后果：①另一端看到相同的今日集合，但专注进度/计时各端独立；②focus 字段随条目参与整条 LWW，并发更新可能冲掉本地镜像——已加 todoview_focus 回填护栏，极端竞态下累计时长可能少记；③Gist payload 不含计时数据，换设备不带走专注历史。
+- 可回退：需要同步计时时，把 focusTotalMs 加入 payload 并约定合并取 max（一天后可加，字段已在）。
+
+## D14 focus 运行态的权威存储
+
+- 问题：focusStartedAt 放条目上，还是 todoview_focus 放本地 key？
+- 选择：todoview_focus 为权威运行态（{id, startedAt, accumulatedMs, savedAt}），条目字段做镜像；focusTotalMs 在暂停/完成/跳过时才落条目。
+- 理由：运行中每 30 秒一次的远端合并（整条 LWW）可能冲掉条目上的镜像；本地 key 不参与合并，恢复可靠。条目镜像仅供显示与调试。
+- 可回退：全部改条目字段 + merge 后从日志重建（复杂度更高，不建议）。
+
+## D15 过期置顶用分组渲染而非排序覆盖
+
+- 问题：「过期项红字置顶」与 Phase 1「order 主序 + planReorder 取中点」冲突（伪排序会让拖拽视觉失效）。
+- 选择：「今天」tab 分两组渲染（过期折叠组 + 正常组），拖拽占位符按组隔离；planReorder 以组内可见列表为邻居来源。
+- 理由：分组归属由 dueDate 派生，「跨组拖动」本无语义，隔离既保住 order 数学又符合直觉；红字沿用既有 .overdue 样式。
+- 可回退：去掉分组、过期项只红字不置顶（删渲染分支即可）。
+
+## D16 回顾「未完成」的口径
+
+- 问题：昨天的 today 集合没有快照，未完成项如何界定？
+- 选择：面板列出「当前 today 成员中未完成者」（dueDate≤今天未完成 + today=true 未完成）。
+- 理由：用户早上面对的正是这批活项；日志的 completedIds/skippedIds 用于摘要行（完成 X · 跳过 Y）。做当日快照需新增持久化结构，收益低。
+- 可回退：每日写 today 成员 id 快照进日志（形状扩展）。
+
+## D17 关闭回顾 = 换日
+
+- 问题：「当天不重复弹」如何记忆？
+- 选择：面板处理完或被跳过时，把日志替换为今天的新空日志（date=今天）⇒ 次日比对 date<today 才再弹。
+- 理由：无需额外「已读」标记；旧日志信息已通过操作落到条目上，替换无损失。
+- 可回退：加 reviewClosed 标记位（一个字段的事）。
+
+## D18 计时显示与后台策略
+
+- 问题：专注计时在后台/锁屏如何不失真？
+- 选择：差值法（elapsed=accumulated+(now-startedAt)），显示 interval 在 visibilitychange 隐藏时停止、回前台立即重算——与 sync 侧「后台降频、回前台补一次」同构。
+- 理由：准确性与 tick 无关（休眠/降频/时钟回拨免疫），后台零功耗零定时器。
+- 可回退：无（这是唯一正确解）。
+
+## D19 跨日重开专注自动转暂停
+
+- 问题：昨天关标签时在计时，今天打开怎么算？
+- 选择：savedAt 跨日 ⇒ 自动置为暂停态，不自动续跑、不自动弹遮罩；同日 ⇒ 恢复遮罩继续计时。
+- 理由：跨夜继续计时会产生大量虚增时长；自动弹全屏遮罩有惊扰感。
+- 可回退：改为继续计时（改一个判断分支）。

@@ -128,3 +128,107 @@
 6. 触摸拖拽需长按激活，短触滑动仍为页面滚动（防误触的取舍）。
 7. 无 Ctrl+Y 重做别名（按任务书仅 Ctrl+Z / Ctrl+Shift+Z / Cmd 变体）。
 8. 撤销/重做会刷新受影响条目的 `updatedAt`（LWW 需要），时间戳非历史精确值；`notified` 等设备本地状态不参与命令。
+
+---
+
+# Phase 2: Today Focus 设计（今天的工作台）
+
+> 分支 `nightly/2026-09-20-focus`（自 `nightly/undo-dnd` 切出）。三幕顺序不可调换：
+> ①早上「今天」→ ②白天「专注」→ ③晚上「回顾」。本章节只追加不改动 Phase 1 内容。
+
+## P2-1. 新增字段与 localStorage key
+
+### Todo 模型（末尾追加、可选、带默认值）
+
+| 字段 | 类型/默认 | 同步 | 语义 |
+| --- | --- | --- | --- |
+| `today?` | boolean / 缺省 | ✅ 同步 | **三态**：`true`=手动入今日；`false`=手动移出（不再被 dueDate 自动拉回）；`undefined`=自动（dueDate ≤ 今天则入今日）。「默认 false」由缺省语义实现：无 dueDate 且未标记 ⇒ 不在今日 |
+| `allDay?` | boolean / 缺省=true | ✅ 同步 | 预留字段：缺省视为全天；本轮无 UI 消费，仅迁移与同步清洗 |
+| `focusStartedAt?` | number / 缺省无 | ❌ 不同步 | 当前专注会话起点（暂停/结束时清除）；镜像值，权威在 todoview_focus |
+| `focusTotalMs?` | number / 缺省 0 | ❌ 不同步 | 累计专注时长（暂停/完成/跳过时累加） |
+
+### localStorage（全部不进 Gist）
+
+| key | 值 | 说明 |
+| --- | --- | --- |
+| `todoview_tab` | `"today" \| "all"` | 默认 `"today"`；非法值按 today 兜底 |
+| `todoview_daily` | `{ date, completedIds[], skippedIds[] }` | 单日日志（沿用任务书给定的单对象形状）；date ≠ 今天且完成跨日检查后替换；>30 天的陈旧条目在读取/写入时整体丢弃 |
+| `todoview_focus` | `{ id, startedAt, accumulatedMs, savedAt }` | 运行中专注会话镜像（**权威运行态**）；暂停时 startedAt=null；完成/跳过/退出会话后清除；跨日恢复自动转暂停 |
+
+### 迁移签名（todo.ts / sync.ts）
+
+- `migrate(item)`：追加 `today: normalizeBooleanField(item.today)`、`allDay: normalizeBooleanField(item.allDay)`、
+  `focusStartedAt: normalizeMs(item.focusStartedAt)`、`focusTotalMs: normalizeMs(item.focusTotalMs)`；
+  非布尔/非有限非负整数一律按缺失兜底（旧数据全缺省）。
+- `sanitizeRemoteTodo`：today/allDay 仅接受 boolean（否则 undefined）；**剥离 focusStartedAt / focusTotalMs**（对端视为不存在）。
+- `gistPayload`：推送前 `stripLocalOnlyFields` 剥离两个 focus 字段（避免本地计时状态泄漏到 Gist）。
+
+## P2-2. 「今天」判定规则（三态）
+
+```
+isTodayMember(t, today):
+  t 已删除            → false
+  t.today === true    → true
+  t.today === false   → false        // 手动移出，不再被自动拉回
+  否则（undefined）    → t.dueDate != null && t.dueDate <= today   // 自动并入：到期日为今天或已过期
+```
+
+- 手动标记 → 写 `today: true`；在「自动并入」项上取消 → 写 `today: false`（三态使「取消且不再拉回」无需额外字段）。
+- dueDate 后续改到未来且 today 仍为 true ⇒ 仍显示在「今天」（显式标记优先）；「移到明天」操作会同时写 `today:false` 规避。
+
+## P2-3. 与上一组排序的关系（关键约束）
+
+- **order 仍是唯一主序**：`sortTodos` 不感知 today；「今天」tab 是**纯过滤层**（先 sortTodos 后按 tab/筛选裁剪），二者不互相覆盖。
+- **过期置顶 = 分组渲染，非排序覆盖**：「今天」tab 渲染为两个分组——顶部「已过期 N 项」折叠组（组内按 order 升序）+ 正常组（order 升序）。
+- **拖拽按组隔离**：占位符只能在被拖项所属分组内移动（分组归属由 dueDate 派生，「跨组拖动」本就无语义）；planReorder 以**所在分组的可见列表**为邻居来源，取中点数学与 Phase 1 完全一致 ⇒ order 计算不受分组影响。
+- 「全部」tab 行为与 Phase 1 完全一致（单列表、无分组）。
+
+## P2-4. 渲染路径复用
+
+- 三幕共用 `renderList`：过期组与正常组各调一次 `renderList`（同一函数、各自 UL）；「全部」tab 单列表调一次。
+- 事件委托从 `#todo-list` 上移到共同父容器 `#list-area`（处理函数本就用 closest(".todo-item") 定位，天然兼容双列表）；拖拽辅助函数改为按 `DragState.homeList`（被拖项所在 UL）取项。
+- 回顾面板/专注遮罩为独立静态骨架（index.html，与 sync-modal 同模式），不进入 renderList。
+
+## P2-5. 专注模式
+
+- **遮罩**：`#focus-overlay`（fixed inset:0、z-index 100 高于 sync-modal 的 10、深色蒙层）；内容=事项全文+分类+截止日期+`HH:MM:SS`（当前会话累计）+「完成 / 暂停(继续) / 跳过 / 退出(Esc)」；底部 env(safe-area-inset-bottom) 留白。
+- **计时=差值法**：`elapsed = accumulatedMs + (running ? now - startedAt : 0)`。从不累加 tick，时钟回拨/后台挂起/休眠唤醒天然免疫；显示用 1s interval，`visibilitychange` 隐藏时停表、回前台立即重算（与 sync 的后台降频同策略：后台不做无谓工作，回前台一次性校准）。
+- **状态机**（防重复累加）：同一事项重复进入 ⇒ 仅重开遮罩不重置；进入他项 ⇒ 当前会话先暂停（不丢已计时长）；任意时刻至多一个运行中会话。
+- **持久化**：每次状态变更同步写 `todoview_focus`（权威）+ 条目 `focusStartedAt`（镜像）；`focusTotalMs` 在暂停/完成/跳过时落条目。关标签重开：启动时读 todoview_focus——同日且运行中 ⇒ 自动恢复遮罩继续计时；跨日 ⇒ 自动转暂停（不自动续跑）；条目已删 ⇒ 丢弃。
+- **完成**：completed=true（走 update 命令，可撤销）+ focusTotalMs 终值落盘 + 清会话；**跳过**：today=false（update 命令）+ 计入 skippedIds + 时长照记 + 退出；**退出(Esc)**=暂停。
+- **同步竞态护栏**：merge 回调后若 todoview_focus 显示运行中而条目 focusStartedAt 被 LWW 冲掉 ⇒ 用镜像回填（后果见 DECISIONS D14）。
+
+## P2-6. 晚间回顾
+
+- **触发（无定时器）**：应用启动 + `visibilitychange` 回前台时，比对 `todoview_daily.date < todayISO()` ⇒ 弹出回顾面板。
+- **面板**：标题「昨日回顾」+ 摘要（昨日完成 X · 跳过 Y，取自日志）+ 未完成列表（当前 today 成员中未完成者，逐项「移到明天 / 改期 / 不再做」）+ 「直接关闭」。
+- **动作**：移到明天 = 一条 update 命令 `{dueDate: 明天, today: false}`（可撤销）；改期 = 行内展开日期输入，确认后一条 update 命令 `{dueDate: 选择值}`；不再做 = 一条 update 命令 `{today: false}` + 计入 skippedIds。
+- **关闭即换日**：处理完或跳过 ⇒ 写入 `{date: 今天, completedIds: [], skippedIds: []}` ⇒ 当天不再弹（比对 date 的天然副作用，无需额外标记）。
+- **30 天滚动清理**：读取与写入时检查，date 早于 today-30 天的日志整体丢弃（只清日志，绝不触碰 todos）。
+
+## P2-7. 暗色与安全区（E⑨，可跳过）
+
+- `prefers-color-scheme: dark` 下覆盖 :root 设计令牌（Phase 1 的令牌化使主题切换集中在头部）+ 少量硬编码悬停色的暗色替换。
+- 遮罩/面板 `padding-bottom: env(safe-area-inset-bottom)`；index.html viewport 追加 `viewport-fit=cover`。
+- `pointer: coarse` 下新控件（今天 pin/专注/面板按钮/tab）触摸目标 ≥44px。
+
+## P2-8. 未决项
+
+| # | 问题 | 保守选择（按此实现） | 备选 |
+| --- | --- | --- | --- |
+| U4 | 过期置顶的实现 | 分组渲染 + 组内拖拽隔离（保 order 数学不变） | 展示层伪排序（会破坏 planReorder 取中点，弃） |
+| U5 | todoview_daily 形状 | 单日对象（按任务书字面形状）+ 30 天陈旧丢弃 | 30 天数组历史（为未来统计，本轮不做） |
+| U6 | 跨日恢复专注 | 自动转暂停，不自动续跑 | 继续累计（会产生跨夜虚增时长，弃） |
+| U7 | 「今日 X/Y」口径 | X=今日成员中已完成数，Y=成员总数 | 剩余/总数 |
+| U8 | 底部「清除已完成/全部」作用域 | 保持全局语义（保 Phase 1 撤销语义不变） | 按 tab 收窄（改动大，弃） |
+
+## P2-9. 已知局限（≥5 条）
+
+1. 回顾面板的「未完成」基于当前状态计算，非昨日当日快照——期间被移出今日的项不会出现在面板。
+2. focus 字段随条目参与整条 LWW：并发远端更新可能冲掉本地 focus 镜像（有 todoview_focus 回填护栏；极端竞态下累计时长可能少计）。
+3. 日志为单日形状，无跨日历史与统计；「30 天清理」仅兜陈旧残留。
+4. 「清除已完成/清除全部」在任何 tab 下都是全局语义（保撤销语义一致）。
+5. 专注为单运行会话：开始另一项会先暂停当前项（暂停会话可再续）。
+6. allDay 为预留字段，本轮无 UI；dueDate 仍是日粒度（无时刻）。
+7. focusTotalMs 为本地 UX 统计：撤销「专注中完成」不回滚该值。
+8. 每日日志换日时旧条目被整体替换（信息已应用到条目本身），不做归档。

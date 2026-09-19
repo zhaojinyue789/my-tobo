@@ -1,5 +1,15 @@
 # NIGHTLY 值守记录（undo/redo 命令栈 + 拖拽排序）
 
+## Phase 2 起点快照（Today Focus，2026-09-20 夜）
+
+- 前置检查结论：
+  1. 上一组验收无 FAIL（两项 SKIP 为测试器无法合成 HTML5 拖拽的运行时限制，非 order/排序/渲染路径缺陷）→ 按规则记录后继续，无需先修。
+  2. 基线 `npm run build`（tsc && vite build）✅ 通过。
+  3. 分支事实核对：上一组分支实际名为 **`nightly/undo-dnd`**（任务书中写作 nightly/2026-09-19，以仓库实际为准），尚未合并 main → 依指令意图**从 `nightly/undo-dnd` 直接切出**新分支。
+- 新工作分支：**`nightly/2026-09-20-focus`**（起点 commit `2aba733` docs: 夜间值守收尾）
+- 上一组最终状态：10+1 个提交全部推送 `origin/nightly/undo-dnd`，工作区干净，未合并 main。
+- 本轮红线沿用：不碰 src-tauri/ 与 .env；不写任何密钥；无新 npm 依赖；每步 build 过才提交；文档只追加不改写。
+
 ## 起点快照（Step 0）
 
 - 起始 commit：`495530c72b62dc92ab474ca6a58656a845c96eff`（main HEAD，工作区干净）
