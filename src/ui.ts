@@ -1,12 +1,13 @@
 import { isDeleted, isOverdue, type Todo } from "./todo";
+import type { TodayTab } from "./today";
 
 export type Filter = "all" | "active" | "completed";
 
 /** 分类筛选值：__all__=全部、__uncat__=未分类，其余为具体分类名（已归一化） */
 export type CategoryFilter = "__all__" | "__uncat__" | string;
 
-/** 视图态：纯渲染层状态，与数据无关，不写存储、不触发同步 */
-export type View = { category: CategoryFilter; status: Filter };
+/** 视图态：纯渲染层状态，与数据无关，不写存储、不触发同步；tab 决定过滤基（today 过滤层，DESIGN P2-3） */
+export type View = { tab: TodayTab; category: CategoryFilter; status: Filter };
 
 export function filterTodos(todos: Todo[], filter: Filter): Todo[] {
   // 已删除（墓碑未过期）的项不参与展示

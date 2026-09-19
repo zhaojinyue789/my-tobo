@@ -12,8 +12,10 @@ import {
   planReorder,
   saveTodos,
   sortTodos,
+  todayISO,
   type Todo,
 } from "./todo";
+import { loadTab, saveTab, todayMembers, type TodayTab } from "./today";
 import {
   applyFilter,
   buildSelectOption,
@@ -49,6 +51,11 @@ const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
 const clearAllBtn = document.querySelector<HTMLButtonElement>("#clear-all")!;
+const todayDateText = document.querySelector<HTMLSpanElement>("#today-date-text")!;
+const todayProgress = document.querySelector<HTMLSpanElement>("#today-progress")!;
+const tabTodayBtn = document.querySelector<HTMLButtonElement>("#tab-today")!;
+const tabAllBtn = document.querySelector<HTMLButtonElement>("#tab-all")!;
+const tabTodayCount = document.querySelector<HTMLSpanElement>("#tab-today-count")!;
 
 const syncDot = document.querySelector<HTMLElement>("#sync-dot")!;
 const syncText = document.querySelector<HTMLElement>("#sync-text")!;
@@ -68,8 +75,8 @@ const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
 let todos: Todo[] = loadTodos();
 /** 命令栈：仅本地持久化、不同步 Gist；命令应用与入栈见各交互处理器 */
 const stack = new CommandStack(loadUndoState());
-/** 视图态：只影响渲染，不碰数据、不写存储、不触发同步 */
-let view: View = { category: "__all__", status: "all" };
+/** 视图态：只影响渲染，不碰数据、不触发同步；tab 记忆在 todoview_tab（默认 today） */
+let view: View = { tab: loadTab(), category: "__all__", status: "all" };
 /** 手动新建的分类：仅内存（不持久化，重启消失且无数据风险），与派生集合合并后进入各下拉框 */
 const manualCategories = new Set<string>();
 
@@ -82,29 +89,55 @@ const sync = new SyncController({
   onStatus: renderSyncStatus,
 });
 
+const WEEKDAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+/** 日期头文案：2026-09-20 → 「9月20日 周日」 */
+function formatDateHeader(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const weekday = WEEKDAYS_ZH[new Date(y, (m ?? 1) - 1, d ?? 1).getDay()];
+  return `${m}月${d}日 ${weekday}`;
+}
+
 function render(): void {
   // 拖拽进行中不重建列表（防同步回调打断手势）；拖完由 finishDrag 统一刷新
   if (drag) return;
+  const today = todayISO();
+  const members = todayMembers(todos, today);
+
+  // 日期头 + tab 态 + 计数（今日 X/Y = 已完成/成员总数）
+  todayDateText.textContent = formatDateHeader(today);
+  tabTodayBtn.classList.toggle("is-active", view.tab === "today");
+  tabAllBtn.classList.toggle("is-active", view.tab === "all");
+  tabTodayBtn.setAttribute("aria-selected", String(view.tab === "today"));
+  tabAllBtn.setAttribute("aria-selected", String(view.tab === "all"));
+  const doneToday = members.filter((t) => t.completed).length;
+  todayProgress.textContent = members.length ? `今日 ${doneToday}/${members.length}` : "今天暂无待办";
+  tabTodayCount.textContent = String(members.length - doneToday);
+
   const categories = [...categoryOptions(todos), ...manualCategories].sort((a, b) =>
     a.localeCompare(b, "zh"),
   );
   syncFilter(categories);
   syncNewTodoCategory(categories);
 
+  // tab 是过滤层：today 成员 or 全量；排序仍由 sortTodos（order 主序）权威决定（DESIGN P2-3）
+  const base = view.tab === "today" ? members : todos;
   renderList(
     listEl,
-    applyFilter(sortTodos(todos), view),
-    todos.some((t) => !isDeleted(t))
+    applyFilter(sortTodos(base), view),
+    base.length > 0
       ? "该筛选下暂无待办"
-      : "这里空空如也，添加一条待办吧～",
+      : view.tab === "today"
+        ? "今天没有待办，添加一条开始吧～"
+        : "这里空空如也，添加一条待办吧～",
     categories,
   );
 
-  const live = todos.filter((t) => !isDeleted(t));
-  const remaining = live.filter((t) => !t.completed).length;
-  countEl.textContent = `剩余 ${remaining} 项未完成`;
-  footer.classList.toggle("hidden", live.length === 0);
-  clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
+  // 底部计数随 tab 作用域；清除按钮保持全局语义（DECISIONS.md U8）
+  const baseLive = base.filter((t) => !isDeleted(t));
+  countEl.textContent = `剩余 ${baseLive.filter((t) => !t.completed).length} 项未完成`;
+  footer.classList.toggle("hidden", baseLive.length === 0);
+  clearBtn.classList.toggle("hidden", !baseLive.some((t) => t.completed));
   undoBtn.disabled = !stack.canUndo;
   redoBtn.disabled = !stack.canRedo;
 }
@@ -601,6 +634,18 @@ function endTouchDrag(): void {
 listEl.addEventListener("touchend", endTouchDrag);
 listEl.addEventListener("touchcancel", endTouchDrag);
 
+// ---------- 视图 tab（今天/全部） ----------
+
+function setTab(tab: TodayTab): void {
+  if (view.tab === tab) return;
+  view.tab = tab;
+  saveTab(tab);
+  render();
+}
+
+tabTodayBtn.addEventListener("click", () => setTab("today"));
+tabAllBtn.addEventListener("click", () => setTab("all"));
+
 // ---------- 复合筛选（分类/状态二选一） ----------
 
 function closeFilterMenu(): void {
@@ -626,10 +671,10 @@ filterMenu.addEventListener("click", (e) => {
       ? view.category === value && view.status === "all"
       : kind === "status" && view.status === value && view.category === "__all__";
   view = isActive
-    ? { category: "__all__", status: "all" }
+    ? { tab: view.tab, category: "__all__", status: "all" }
     : kind === "category"
-      ? { category: value, status: "all" }
-      : { category: "__all__", status: value as Filter };
+      ? { tab: view.tab, category: value, status: "all" }
+      : { tab: view.tab, category: "__all__", status: value as Filter };
   closeFilterMenu();
   requestAnimationFrame(render);
 });

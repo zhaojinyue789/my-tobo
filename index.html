@@ -33,6 +33,18 @@
           </button>
         </span>
       </div>
+      <header id="today-header" class="today-header">
+        <div class="today-date">
+          <span id="today-date-text"></span>
+          <span id="today-progress" class="today-progress"></span>
+        </div>
+        <nav class="today-tabs" aria-label="视图切换">
+          <button id="tab-today" class="today-tab" type="button" aria-selected="true">
+            今天<span id="tab-today-count" class="tab-count"></span>
+          </button>
+          <button id="tab-all" class="today-tab" type="button" aria-selected="false">全部</button>
+        </nav>
+      </header>
       <div id="storage-warning" class="storage-warning hidden">
         存储空间已满，最近的改动可能没有保存，请清理旧待办后重试
       </div>
