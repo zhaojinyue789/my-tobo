@@ -77,6 +77,21 @@
       </footer>
     </main>
 
+    <div id="focus-overlay" class="focus-overlay hidden">
+      <div class="focus-card" role="dialog" aria-modal="true" aria-labelledby="focus-text">
+        <p id="focus-category" class="focus-category"></p>
+        <h2 id="focus-text" class="focus-text"></h2>
+        <p id="focus-due" class="focus-due"></p>
+        <div id="focus-timer" class="focus-timer" role="timer">00:00:00</div>
+        <div class="focus-actions">
+          <button id="focus-done" class="focus-btn primary" type="button">完成</button>
+          <button id="focus-pause" class="focus-btn" type="button">暂停</button>
+          <button id="focus-skip" class="focus-btn" type="button">跳过</button>
+          <button id="focus-exit" class="focus-btn ghost" type="button">退出 (Esc)</button>
+        </div>
+      </div>
+    </div>
+
     <div id="sync-modal" class="modal-backdrop hidden">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sync-modal-title">
         <h2 id="sync-modal-title" class="modal-title">同步设置</h2>

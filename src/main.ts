@@ -15,7 +15,18 @@ import {
   todayISO,
   type Todo,
 } from "./todo";
-import { loadTab, saveTab, splitTodayOverdue, isTodayMember, todayMembers, type TodayTab } from "./today";
+import {
+  clearFocusState,
+  computeFocusElapsed,
+  formatHMS,
+  loadTab,
+  saveFocusState,
+  saveTab,
+  splitTodayOverdue,
+  isTodayMember,
+  todayMembers,
+  type TodayTab,
+} from "./today";
 import {
   applyFilter,
   buildSelectOption,
@@ -133,7 +144,7 @@ function render(): void {
     const { overdue, rest } = splitTodayOverdue(sorted, today);
     overdueBox.classList.toggle("hidden", overdue.length === 0);
     overdueTitle.textContent = `已过期 ${overdue.length} 项`;
-    renderList(overdueListEl, overdue, "", categories);
+    renderList(overdueListEl, overdue, "", categories, { focus: true });
     mainItems = rest;
   } else {
     overdueBox.classList.add("hidden");
@@ -148,6 +159,7 @@ function render(): void {
         ? "今天没有待办，添加一条开始吧～"
         : "这里空空如也，添加一条待办吧～",
     categories,
+    view.tab === "today" ? { focus: true } : undefined,
   );
 
   // 底部计数随 tab 作用域；清除按钮保持全局语义（DECISIONS.md U8）
@@ -334,6 +346,9 @@ listArea.addEventListener("click", (e) => {
     const completed = !current.completed;
     todos = todos.map((t) => (t.id === id ? { ...t, completed, updatedAt: Date.now() } : t));
     stack.push(makeUpdateCommand(id, { completed: current.completed }, { completed }));
+  } else if (target.classList.contains("todo-focus")) {
+    startFocus(id);
+    return; // startFocus 内部已本地落盘
   } else if (target.classList.contains("todo-today-pin")) {
     // 三态翻转：在今日（手动或自动）→ 移出；不在 → 加入（DECISIONS.md D12）
     const next = !isTodayMember(current, todayISO());
@@ -694,6 +709,193 @@ overdueToggle.addEventListener("click", () => {
   overdueOpen = !overdueOpen;
   overdueBox.classList.toggle("is-collapsed", !overdueOpen);
   overdueToggle.setAttribute("aria-expanded", String(overdueOpen));
+});
+
+// ---------- 专注模式（第二幕）：一次只做一件事，差值法计时（DECISIONS.md D14/D18） ----------
+
+const focusOverlay = document.querySelector<HTMLElement>("#focus-overlay")!;
+const focusCategoryEl = document.querySelector<HTMLElement>("#focus-category")!;
+const focusTextEl = document.querySelector<HTMLElement>("#focus-text")!;
+const focusDueEl = document.querySelector<HTMLElement>("#focus-due")!;
+const focusTimerEl = document.querySelector<HTMLElement>("#focus-timer")!;
+const focusDoneBtn = document.querySelector<HTMLButtonElement>("#focus-done")!;
+const focusPauseBtn = document.querySelector<HTMLButtonElement>("#focus-pause")!;
+const focusSkipBtn = document.querySelector<HTMLButtonElement>("#focus-skip")!;
+const focusExitBtn = document.querySelector<HTMLButtonElement>("#focus-exit")!;
+
+/** 当前专注会话（内存态）；权威镜像在 todoview_focus */
+let focusSession: { id: string; startedAt: number | null; accumulatedMs: number } | null = null;
+let focusTimerId: ReturnType<typeof setInterval> | undefined;
+
+function focusTarget(): Todo | undefined {
+  return focusSession ? todos.find((t) => t.id === focusSession!.id) : undefined;
+}
+
+function focusElapsedMs(now: number = Date.now()): number {
+  return focusSession
+    ? computeFocusElapsed(focusSession.accumulatedMs, focusSession.startedAt, now)
+    : 0;
+}
+
+/** focus 字段属本地状态：只写 localStorage 与渲染，不走同步推送（DECISIONS.md D13） */
+function persistLocalOnly(): void {
+  storageWarning.classList.toggle("hidden", saveTodos(todos));
+  render();
+}
+
+/** 暂停：已计时长并入会话累计，运行态保留（可继续） */
+function pauseFocus(): void {
+  if (!focusSession || focusSession.startedAt == null) return;
+  focusSession.accumulatedMs += Math.max(0, Date.now() - focusSession.startedAt);
+  focusSession.startedAt = null;
+  todos = todos.map((t) => (t.id === focusSession!.id ? { ...t, focusStartedAt: undefined } : t));
+  saveFocusState({
+    id: focusSession.id,
+    startedAt: null,
+    accumulatedMs: focusSession.accumulatedMs,
+    savedAt: Date.now(),
+  });
+  persistLocalOnly();
+}
+
+/** 继续：从当前时刻起算（差值法，中断时长不计时） */
+function resumeFocus(): void {
+  if (!focusSession || focusSession.startedAt != null) return;
+  focusSession.startedAt = Date.now();
+  todos = todos.map((t) =>
+    t.id === focusSession!.id ? { ...t, focusStartedAt: focusSession!.startedAt! } : t,
+  );
+  saveFocusState({
+    id: focusSession.id,
+    startedAt: focusSession.startedAt,
+    accumulatedMs: focusSession.accumulatedMs,
+    savedAt: Date.now(),
+  });
+  persistLocalOnly();
+}
+
+/** 结算：会话时长并入条目 focusTotalMs，清空运行态（不 bump updatedAt——本地状态不参与 LWW） */
+function settleFocus(now: number = Date.now()): void {
+  if (!focusSession) return;
+  const { id, startedAt, accumulatedMs } = focusSession;
+  const elapsed = computeFocusElapsed(accumulatedMs, startedAt, now);
+  todos = todos.map((t) =>
+    t.id === id
+      ? {
+          ...t,
+          focusTotalMs: elapsed > 0 ? (t.focusTotalMs ?? 0) + elapsed : t.focusTotalMs,
+          focusStartedAt: undefined,
+        }
+      : t,
+  );
+  focusSession = null;
+  clearFocusState();
+  stopFocusTimer();
+}
+
+/** 进入专注：同项重入只重开遮罩（防重复累加）；换项先结算当前会话（一次只做一件事） */
+function startFocus(id: string): void {
+  if (focusSession?.id === id) {
+    openFocusOverlay();
+    return;
+  }
+  if (focusSession) settleFocus();
+  const todo = todos.find((t) => t.id === id && !isDeleted(t) && !t.completed);
+  if (!todo) return;
+  focusSession = { id, startedAt: Date.now(), accumulatedMs: 0 };
+  todos = todos.map((t) => (t.id === id ? { ...t, focusStartedAt: focusSession!.startedAt! } : t));
+  saveFocusState({ id, startedAt: focusSession.startedAt, accumulatedMs: 0, savedAt: Date.now() });
+  persistLocalOnly();
+  openFocusOverlay();
+}
+
+/** 完成：completed=true 走 update 命令（可撤销）；时长结算后清会话 */
+function focusDone(): void {
+  const target = focusTarget();
+  if (!target) return;
+  settleFocus();
+  todos = todos.map((t) => (t.id === target.id ? { ...t, completed: true, updatedAt: Date.now() } : t));
+  stack.push(makeUpdateCommand(target.id, { completed: target.completed }, { completed: true }));
+  persist();
+  closeFocusOverlay();
+}
+
+/** 跳过：移出今天（update 命令，可撤销）；已计时长照记 */
+function focusSkip(): void {
+  const target = focusTarget();
+  if (!target) return;
+  settleFocus();
+  todos = todos.map((t) => (t.id === target.id ? { ...t, today: false, updatedAt: Date.now() } : t));
+  stack.push(makeUpdateCommand(target.id, { today: target.today ?? null }, { today: false }));
+  persist();
+  closeFocusOverlay();
+}
+
+function openFocusOverlay(): void {
+  updateFocusOverlay();
+  focusOverlay.classList.remove("hidden");
+  startFocusTimer();
+}
+
+function closeFocusOverlay(): void {
+  focusOverlay.classList.add("hidden");
+  stopFocusTimer();
+}
+
+function updateFocusOverlay(): void {
+  const t = focusTarget();
+  if (!t) {
+    closeFocusOverlay();
+    return;
+  }
+  focusCategoryEl.textContent = t.category ?? "未分类";
+  focusTextEl.textContent = t.text;
+  focusDueEl.textContent = t.dueDate
+    ? `截止 ${formatDueZh(t.dueDate)}${isOverdue(t) ? " · 已逾期" : ""}`
+    : "无截止日期";
+  focusPauseBtn.textContent = focusSession?.startedAt != null ? "暂停" : "继续";
+  focusTimerEl.textContent = formatHMS(focusElapsedMs());
+}
+
+/** 2026-09-25 → 「9月25日」 */
+function formatDueZh(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${m}月${d}日`;
+}
+
+function renderFocusTimer(): void {
+  focusTimerEl.textContent = formatHMS(focusElapsedMs());
+}
+
+function startFocusTimer(): void {
+  stopFocusTimer();
+  focusTimerId = setInterval(renderFocusTimer, 1000);
+}
+
+function stopFocusTimer(): void {
+  if (focusTimerId) {
+    clearInterval(focusTimerId);
+    focusTimerId = undefined;
+  }
+}
+
+focusDoneBtn.addEventListener("click", focusDone);
+focusSkipBtn.addEventListener("click", focusSkip);
+focusExitBtn.addEventListener("click", () => {
+  pauseFocus(); // 退出 = 暂停：会话保留，重进可继续
+  closeFocusOverlay();
+});
+focusPauseBtn.addEventListener("click", () => {
+  if (focusSession?.startedAt != null) pauseFocus();
+  else resumeFocus();
+  updateFocusOverlay();
+});
+
+// Esc 退出专注 = 暂停并关遮罩；drag 未激活时互不影响，不触发撤销（验收 7）
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !focusSession || focusOverlay.classList.contains("hidden")) return;
+  pauseFocus();
+  closeFocusOverlay();
 });
 
 // ---------- 视图 tab（今天/全部） ----------

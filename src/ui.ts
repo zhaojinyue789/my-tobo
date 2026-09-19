@@ -300,6 +300,7 @@ export function renderList(
   todos: Todo[],
   emptyMessage: string,
   categories: string[] = [],
+  opts?: { focus?: boolean },
 ): void {
   const empty = document.createElement("li");
   empty.className = "todo-empty";
@@ -360,7 +361,18 @@ export function renderList(
     meta.className = "todo-meta";
     meta.append(todayPin, categorySelect, dueInput);
 
-    li.append(toggle, label, meta, del);
+    li.append(toggle, label, meta);
+    // 专注入口：仅「今天」tab 且未完成的项显示（第二幕）
+    if (opts?.focus && !todo.completed) {
+      const focusBtn = document.createElement("button");
+      focusBtn.type = "button";
+      focusBtn.className = "todo-focus";
+      focusBtn.setAttribute("aria-label", "专注");
+      focusBtn.title = "专注";
+      focusBtn.textContent = "▶";
+      li.append(focusBtn);
+    }
+    li.append(del);
     fragment.append(li);
   }
   listEl.replaceChildren(fragment);
