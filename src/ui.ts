@@ -49,52 +49,72 @@ export function buildSelectOption(value: string, label: string): HTMLOptionEleme
 
 export interface ToolbarRefs {
   root: HTMLElement;
-  /** 分类筛选下拉（选项由 render 每次同步） */
-  filterCategory: HTMLSelectElement;
-  /** 状态筛选下拉：全部/未完成/已完成（复用既有 Filter 语义） */
-  filterStatus: HTMLSelectElement;
+  /** 复合筛选按钮：文字显示当前生效筛选，点击开合菜单 */
+  filterButton: HTMLButtonElement;
+  /** 复合筛选菜单（选项每次 render 由 syncFilterMenu 重建） */
+  filterMenu: HTMLElement;
   newCategoryInput: HTMLInputElement;
   addCategoryBtn: HTMLButtonElement;
   /** 新建分类的反馈行（空值/重复/成功提示） */
   categoryHint: HTMLElement;
 }
 
-/** 顶部工具栏：筛选行 + 「新建分类」折叠面板；构建后插在列表容器之前 */
+/** 顶部工具栏：复合筛选 + 「新建分类」行内编辑；构建后插在列表容器之前 */
 export function buildToolbar(before: HTMLElement): ToolbarRefs {
   const root = document.createElement("div");
   root.id = "toolbar";
   root.className = "toolbar";
 
-  // 第一行：两个筛选下拉
+  // 筛选行：复合筛选按钮（分类/状态二选一）+ 右侧「+ 新建分类」触发器
   const filters = document.createElement("div");
   filters.className = "toolbar-filters";
 
-  const filterCategory = document.createElement("select");
-  filterCategory.id = "filter-category";
-  filterCategory.className = "filter-select";
-  filterCategory.setAttribute("aria-label", "按分类筛选");
+  const filterWrap = document.createElement("div");
+  filterWrap.className = "filter-dd";
 
-  const filterStatus = document.createElement("select");
-  filterStatus.id = "filter-status";
-  filterStatus.className = "filter-select";
-  filterStatus.setAttribute("aria-label", "按状态筛选");
-  filterStatus.append(
-    buildSelectOption("all", "全部"),
-    buildSelectOption("active", "未完成"),
-    buildSelectOption("completed", "已完成"),
-  );
-  filters.append(filterCategory, filterStatus);
+  const filterButton = document.createElement("button");
+  filterButton.id = "filter-button";
+  filterButton.className = "filter-button";
+  filterButton.type = "button";
+  filterButton.setAttribute("aria-haspopup", "listbox");
+  filterButton.setAttribute("aria-expanded", "false");
+  const buttonText = document.createElement("span");
+  buttonText.className = "filter-button-text";
+  buttonText.textContent = "全部待办";
+  filterButton.append(buttonText);
 
-  // 第二行：新建分类折叠面板（原生 details/summary，无需额外事件绑定）
-  const panel = document.createElement("details");
-  panel.className = "cat-panel";
+  const filterMenu = document.createElement("div");
+  filterMenu.id = "filter-menu";
+  filterMenu.className = "filter-menu";
+  filterMenu.setAttribute("role", "listbox");
+  filterMenu.setAttribute("aria-label", "筛选选项");
 
-  const summary = document.createElement("summary");
-  summary.className = "cat-panel-summary";
-  summary.textContent = "新建分类";
+  filterWrap.append(filterButton, filterMenu);
 
-  const panelBody = document.createElement("div");
-  panelBody.className = "cat-panel-body";
+  // 「+ 新建分类」触发器：链接样式常驻筛选行右侧，默认收起不占行
+  const trigger = document.createElement("button");
+  trigger.className = "cat-trigger";
+  trigger.type = "button";
+  trigger.textContent = "新建分类";
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-controls", "cat-editor");
+
+  const categoryHint = document.createElement("span");
+  categoryHint.id = "category-hint";
+  categoryHint.className = "category-hint hidden";
+  categoryHint.setAttribute("role", "status");
+  // 提示放在筛选行内而非编辑区里：编辑区自动收起后「已添加」仍可见
+  filters.append(filterWrap, trigger, categoryHint);
+
+  // 行内编辑区：默认收起（0 高度），点击触发器后在下方滑出输入框 + 确定按钮
+  const editorWrap = document.createElement("div");
+  editorWrap.className = "cat-editor-wrap";
+  editorWrap.id = "cat-editor";
+
+  const editor = document.createElement("div");
+  editor.className = "cat-editor";
+  const editorInner = document.createElement("div");
+  editorInner.className = "cat-editor-inner";
 
   const newCategoryInput = document.createElement("input");
   newCategoryInput.id = "new-category";
@@ -107,18 +127,106 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   addCategoryBtn.id = "add-category";
   addCategoryBtn.className = "btn btn-secondary";
   addCategoryBtn.type = "button";
-  addCategoryBtn.textContent = "添加分类";
+  addCategoryBtn.textContent = "确定";
 
-  const categoryHint = document.createElement("span");
-  categoryHint.id = "category-hint";
-  categoryHint.className = "category-hint hidden";
-  categoryHint.setAttribute("role", "status");
+  editorInner.append(newCategoryInput, addCategoryBtn);
+  editor.append(editorInner);
+  editorWrap.append(editor);
 
-  panelBody.append(newCategoryInput, addCategoryBtn, categoryHint);
-  panel.append(summary, panelBody);
-  root.append(filters, panel);
+  // 展开/收起：展开时聚焦输入框
+  const setCatOpen = (open: boolean): void => {
+    editorWrap.classList.toggle("open", open);
+    trigger.setAttribute("aria-expanded", String(open));
+    if (open) newCategoryInput.focus();
+  };
+  trigger.addEventListener("click", () => setCatOpen(!editorWrap.classList.contains("open")));
+
+  // 点击触发器与编辑区以外的任意位置收起
+  document.addEventListener("click", (e) => {
+    const target = e.target as Node;
+    if (editorWrap.contains(target) || trigger.contains(target)) return;
+    if (editorWrap.classList.contains("open")) setCatOpen(false);
+  });
+
+  // Esc 收起；Enter 等同点击确定（复用主逻辑的校验与添加）
+  newCategoryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") return setCatOpen(false);
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    addCategoryBtn.click();
+  });
+
+  // 成功添加的标志：主逻辑把「非空输入」清空了（校验失败会保留原内容并提示）；
+  // 延迟到主逻辑处理完再对比，成功则自动收起，空值/失败保持展开
+  addCategoryBtn.addEventListener("click", () => {
+    const before = newCategoryInput.value;
+    setTimeout(() => {
+      if (before && !newCategoryInput.value) setCatOpen(false);
+    }, 0);
+  });
+
+  root.append(filters, editorWrap);
   before.before(root);
-  return { root, filterCategory, filterStatus, newCategoryInput, addCategoryBtn, categoryHint };
+  return { root, filterButton, filterMenu, newCategoryInput, addCategoryBtn, categoryHint };
+}
+
+/** 复合筛选同步：按当前视图态重建菜单选项、标记选中项并更新按钮文字 */
+export function syncFilterMenu(
+  button: HTMLButtonElement,
+  menu: HTMLElement,
+  categories: string[],
+  view: View,
+): void {
+  // 当前生效筛选（复合 UI 一次只激活一个维度，状态优先展示）
+  let activeKind: "category" | "status" | null = null;
+  let activeValue = "";
+  if (view.status !== "all") {
+    activeKind = "status";
+    activeValue = view.status;
+  } else if (view.category !== "__all__") {
+    activeKind = "category";
+    activeValue = view.category;
+  }
+
+  const group = (label: string): HTMLElement => {
+    const g = document.createElement("div");
+    g.className = "filter-menu-group";
+    g.textContent = label;
+    return g;
+  };
+  const option = (kind: "category" | "status", value: string, label: string): HTMLElement => {
+    const selected = activeKind === kind && activeValue === value;
+    const opt = document.createElement("div");
+    opt.className = "filter-menu-option" + (selected ? " is-selected" : "");
+    opt.setAttribute("role", "option");
+    opt.setAttribute("aria-selected", String(selected));
+    opt.tabIndex = 0;
+    opt.dataset.kind = kind;
+    opt.dataset.value = value;
+    opt.textContent = label;
+    return opt;
+  };
+
+  menu.replaceChildren(
+    group("分类"),
+    option("category", "__uncat__", "未分类"),
+    ...categories.map((name) => option("category", name, name)),
+    group("状态"),
+    option("status", "active", "未完成"),
+    option("status", "completed", "已完成"),
+  );
+
+  const text = button.querySelector<HTMLElement>(".filter-button-text")!;
+  text.textContent =
+    activeKind === "category"
+      ? activeValue === "__uncat__"
+        ? "未分类"
+        : activeValue
+      : activeKind === "status"
+        ? activeValue === "active"
+          ? "未完成"
+          : "已完成"
+        : "全部待办";
 }
 
 /** 单条待办的分类下拉：未分类 + 全部现有分类；存量脏值防御性兜底显示 */

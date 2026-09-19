@@ -268,7 +268,6 @@ body {
 }
 
 /* 下拉框统一外观：去原生箭头，换浅灰胶囊 + 自绘箭头 */
-.filter-select,
 .new-todo-category,
 .todo-category {
   appearance: none;
@@ -288,14 +287,12 @@ body {
   text-overflow: ellipsis;
 }
 
-.filter-select:hover,
 .new-todo-category:hover,
 .todo-category:hover {
   background-color: var(--field-hover);
   color: var(--text);
 }
 
-.filter-select:focus-visible,
 .new-todo-category:focus-visible,
 .todo-category:focus-visible {
   outline: none;
@@ -361,7 +358,6 @@ body {
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   margin-top: 20px;
 }
 
@@ -371,95 +367,192 @@ body {
   gap: 8px;
 }
 
-.filter-select {
-  height: 30px;
-  max-width: 180px;
-  padding: 0 26px 0 10px;
-  font-size: 13px;
-  border-radius: 8px;
+/* 复合筛选：按钮文字显示当前生效筛选，点击开合分组菜单 */
+.filter-dd {
+  position: relative;
 }
 
-.cat-panel {
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.cat-panel:hover {
-  border-color: var(--border-strong);
-}
-
-.cat-panel-summary {
-  display: flex;
+.filter-button {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  min-width: 104px;
+  height: 30px;
+  padding: 0 26px 0 10px;
+  font: inherit;
   font-size: 13px;
-  font-weight: 500;
   color: var(--text-secondary);
+  background-color: var(--field);
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
-  list-style: none;
-  user-select: none;
-  border-radius: 12px;
   transition:
+    background-color 0.15s,
     color 0.15s,
-    background-color 0.15s;
+    box-shadow 0.15s;
 }
 
-.cat-panel[open] .cat-panel-summary {
-  border-radius: 12px 12px 0 0;
-}
-
-.cat-panel-summary::-webkit-details-marker {
-  display: none;
-}
-
-.cat-panel-summary:hover {
+.filter-button:hover,
+.filter-button[aria-expanded="true"] {
+  background-color: var(--field-hover);
   color: var(--text);
-  background: #eef1f5;
 }
 
-.cat-panel-summary:focus-visible {
+.filter-button:focus-visible {
   outline: none;
+  border-color: var(--accent);
   box-shadow: var(--ring);
 }
 
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  min-width: 160px;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  display: none;
+}
+
+.filter-menu.open {
+  display: block;
+  animation: filter-menu-in 0.15s ease;
+}
+
+@keyframes filter-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.filter-menu-group {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* 第二个分组（状态）前加分隔线 */
+.filter-menu-group:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.filter-menu-option {
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-menu-option:hover,
+.filter-menu-option:focus-visible {
+  outline: none;
+  background: #f1f4f8;
+  color: var(--text);
+}
+
+.filter-menu-option.is-selected {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* 选中项右侧打勾 */
+.filter-menu-option.is-selected::after {
+  content: "✓";
+  margin-left: auto;
+  font-size: 12px;
+}
+
+/* 「+ 新建分类」触发器：链接样式常驻筛选行右侧，不抢视觉焦点 */
+.cat-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
 /* 「＋」前缀提示这是新增动作 */
-.cat-panel-summary::before {
+.cat-trigger::before {
   content: "+";
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--accent);
 }
 
-/* 右侧小箭头，展开时翻转 */
-.cat-panel-summary::after {
-  content: "";
-  flex: none;
-  width: 12px;
-  height: 12px;
-  margin-left: auto;
-  background: var(--chevron) center / contain no-repeat;
-  transition: transform 0.18s ease;
+.cat-trigger:hover {
+  color: var(--text);
 }
 
-.cat-panel[open] .cat-panel-summary::after {
-  transform: rotate(180deg);
+.cat-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
-.cat-panel-body {
+/* 行内编辑区：grid-rows 0fr→1fr 滑出/收起动效，收起时不占任何空间 */
+.cat-editor-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+.cat-editor-wrap.open {
+  grid-template-rows: 1fr;
+}
+
+.cat-editor {
+  overflow: hidden;
+  min-height: 0;
+  visibility: hidden;
+  transition: visibility 0s linear 0.2s;
+}
+
+.cat-editor-wrap.open .cat-editor {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.cat-editor-inner {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.cat-editor .btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
 }
 
 .new-category {
-  flex: 1 1 140px;
+  flex: 1;
   min-width: 0;
-  height: 34px;
+  height: 32px;
   padding: 0 12px;
   font: inherit;
   font-size: 13px;
@@ -489,9 +582,9 @@ body {
 }
 
 .category-hint {
-  flex-basis: 100%;
   font-size: 12px;
   color: var(--text-muted);
+  align-self: center;
 }
 
 /* ============================================================

@@ -15,6 +15,7 @@ import {
   buildToolbar,
   categoryOptions,
   renderList,
+  syncFilterMenu,
   type Filter,
   type View,
 } from "./ui";
@@ -25,7 +26,7 @@ import "./style.css";
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const { filterCategory, filterStatus, newCategoryInput, addCategoryBtn, categoryHint } =
+const { filterButton, filterMenu, newCategoryInput, addCategoryBtn, categoryHint } =
   buildToolbar(listEl);
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
@@ -65,7 +66,7 @@ function render(): void {
   const categories = [...categoryOptions(todos), ...manualCategories].sort((a, b) =>
     a.localeCompare(b, "zh"),
   );
-  syncCategoryFilter(categories);
+  syncFilter(categories);
   syncNewTodoCategory(categories);
 
   renderList(
@@ -84,14 +85,8 @@ function render(): void {
   clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
 }
 
-/** 分类筛选下拉：全部/未分类/现存分类；当前视图分类已消失（最后一条被删）时回退「全部」 */
-function syncCategoryFilter(categories: string[]): void {
-  filterCategory.replaceChildren();
-  filterCategory.append(
-    buildSelectOption("__all__", "全部"),
-    buildSelectOption("__uncat__", "未分类"),
-    ...categories.map((name) => buildSelectOption(name, name)),
-  );
+/** 复合筛选同步：分类消失（最后一条被删）时回退未筛选，再按当前视图态刷新按钮与菜单 */
+function syncFilter(categories: string[]): void {
   if (
     view.category !== "__all__" &&
     view.category !== "__uncat__" &&
@@ -99,7 +94,7 @@ function syncCategoryFilter(categories: string[]): void {
   ) {
     view.category = "__all__";
   }
-  filterCategory.value = view.category;
+  syncFilterMenu(filterButton, filterMenu, categories, view);
 }
 
 function persist(): void {
@@ -279,15 +274,57 @@ listEl.addEventListener("change", (e) => {
   if (updated) void notifyTodoOnce(updated);
 });
 
-// 视图态筛选：只改 view 后 rAF 重渲染，绝不碰数据/存储/同步
-filterCategory.addEventListener("change", () => {
-  view.category = filterCategory.value;
+// ---------- 复合筛选（分类/状态二选一） ----------
+
+function closeFilterMenu(): void {
+  filterMenu.classList.remove("open");
+  filterButton.setAttribute("aria-expanded", "false");
+}
+
+// 按钮：开合菜单
+filterButton.addEventListener("click", () => {
+  const open = !filterMenu.classList.contains("open");
+  filterMenu.classList.toggle("open", open);
+  filterButton.setAttribute("aria-expanded", String(open));
+});
+
+// 选项：设置视图态后 rAF 重渲染；同项再点 = 取消筛选恢复「全部待办」
+filterMenu.addEventListener("click", (e) => {
+  const opt = (e.target as HTMLElement).closest<HTMLElement>("[data-kind]");
+  if (!opt) return;
+  const kind = opt.dataset.kind;
+  const value = opt.dataset.value ?? "";
+  const isActive =
+    kind === "category"
+      ? view.category === value && view.status === "all"
+      : kind === "status" && view.status === value && view.category === "__all__";
+  view = isActive
+    ? { category: "__all__", status: "all" }
+    : kind === "category"
+      ? { category: value, status: "all" }
+      : { category: "__all__", status: value as Filter };
+  closeFilterMenu();
   requestAnimationFrame(render);
 });
 
-filterStatus.addEventListener("change", () => {
-  view.status = filterStatus.value as Filter;
-  requestAnimationFrame(render);
+// 键盘可达：选项获得焦点时 Enter/Space 视同点击
+filterMenu.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const opt = (e.target as HTMLElement).closest<HTMLElement>("[data-kind]");
+  if (!opt) return;
+  e.preventDefault();
+  opt.click();
+});
+
+// 点击按钮/菜单以外或按 Esc 收起菜单
+document.addEventListener("click", (e) => {
+  const target = e.target as Node;
+  if (filterMenu.contains(target) || filterButton.contains(target)) return;
+  closeFilterMenu();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeFilterMenu();
 });
 
 // 新建分类：不产生独立实体，仅加入内存集合；空值/重复拒绝
