@@ -1328,7 +1328,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 16px;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
 }
@@ -1504,15 +1504,84 @@ body {
   }
 
   .todo-toggle {
-    width: 26px;
-    height: 26px;
-    font-size: 13px;
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
   }
 
-  .todo-delete {
-    width: 32px;
-    height: 32px;
+  .todo-delete,
+  .todo-focus,
+  .todo-today-pin {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+  }
+
+  .todo-category,
+  .todo-due {
+    height: 44px;
+  }
+
+  .todo-due.is-empty {
+    width: 44px;
+  }
+
+  .todo-due.is-empty:focus {
+    width: 130px;
+  }
+
+  .todo-delete,
+  .todo-focus {
     opacity: 0.6;
+  }
+
+  .today-tab {
+    height: 44px;
+    padding: 0 16px;
+  }
+
+  .filter-button {
+    height: 44px;
+  }
+
+  .overdue-toggle {
+    min-height: 44px;
+  }
+
+  .new-todo-category,
+  .todo-form .btn,
+  .new-category,
+  .cat-editor .btn {
+    height: 44px;
+  }
+
+  .new-category,
+  .cat-editor .btn {
+    height: 44px;
+  }
+
+  .clear-completed,
+  .clear-all {
+    min-height: 44px;
+  }
+
+  .sync-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .focus-btn {
+    height: 44px;
+    padding: 0 22px;
+  }
+
+  .review-act {
+    height: 44px;
+    padding: 0 14px;
+  }
+
+  .modal-btn {
+    height: 44px;
   }
 }
 
@@ -1523,5 +1592,84 @@ body {
   *::after {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* ============================================================
+   暗色主题：跟随系统，只覆盖设计令牌与少量硬编码色
+   ============================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1320;
+    --card: #161d2c;
+    --text: #e7ecf4;
+    --text-secondary: #aeb9c9;
+    --text-muted: #6d7a8c;
+    --accent: #4f8ff7;
+    --accent-dark: #6ba3ff; /* 暗色下 hover 提亮而非加深 */
+    --accent-soft: rgba(79, 143, 247, 0.16);
+    --border: #2a3345;
+    --border-strong: #38445c;
+    --field: #1d2536;
+    --field-hover: #263044;
+    --danger: #f87171;
+    --danger-text: #fca5a5;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --shadow-card:
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 12px 32px rgba(0, 0, 0, 0.35);
+    --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.5);
+    --ring: 0 0 0 3px rgba(79, 143, 247, 0.25);
+  }
+
+  body {
+    background:
+      radial-gradient(1100px 380px at 50% -120px, rgba(79, 143, 247, 0.08), transparent 70%),
+      var(--bg);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #333e52;
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #404d66;
+  }
+
+  .todo-item:hover {
+    background: #1a2233;
+  }
+
+  .filter-menu-option:hover,
+  .filter-menu-option:focus-visible {
+    background: #1d2536;
+    color: var(--text);
+  }
+
+  .storage-warning {
+    color: var(--danger-text);
+    background: rgba(248, 113, 113, 0.12);
+    border-color: rgba(248, 113, 113, 0.35);
+  }
+
+  .modal-hint code {
+    background: #1d2536;
+  }
+
+  .clear-completed,
+  .clear-all {
+    color: #64748b;
+  }
+
+  .tab-count {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .today-tab.is-active {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 }
