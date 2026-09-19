@@ -315,6 +315,8 @@ export function renderList(
     // 过期标记：仅 未完成+未删除+dueDate<今天；当天不算过期（isOverdue 保证）。样式由 style.css 另行定义
     li.className = `todo-item${todo.completed ? " is-done" : ""}${isOverdue(todo) ? " overdue" : ""}`;
     li.dataset.id = todo.id;
+    // 原生拖拽排序：拖拽逻辑在 main.ts 事件委托；行内控件不设 draggable、不受影响
+    li.draggable = true;
 
     const toggle = document.createElement("button");
     toggle.type = "button";

@@ -9,6 +9,7 @@ import {
   nextAppendOrder,
   normalizeCategory,
   planRebalance,
+  planReorder,
   saveTodos,
   sortTodos,
   type Todo,
@@ -34,6 +35,7 @@ import {
   makeCreateCommand,
   makeDeleteCommand,
   makeRebalanceCommand,
+  makeReorderCommand,
   makeUpdateCommand,
 } from "./undo";
 import "./style.css";
@@ -81,6 +83,8 @@ const sync = new SyncController({
 });
 
 function render(): void {
+  // 拖拽进行中不重建列表（防同步回调打断手势）；拖完由 finishDrag 统一刷新
+  if (drag) return;
   const categories = [...categoryOptions(todos), ...manualCategories].sort((a, b) =>
     a.localeCompare(b, "zh"),
   );
@@ -365,6 +369,133 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (e.shiftKey) doRedo();
   else doUndo();
+});
+
+// ---------- 拖拽排序（原生 Drag & Drop；触摸降级见 touch 段） ----------
+// 原则：dragover 只移动占位节点、绝不重渲染列表；松手后一次性提交 reorder 命令（可撤销）
+
+interface DragState {
+  id: string;
+  placeholder: HTMLLIElement;
+  /** 占位符当前插入位（可见列表剔除被拖项后的索引） */
+  lastIndex: number;
+  /** 拖起时的原始位置（Esc 取消 / 原位判定用） */
+  originalIndex: number;
+  pointerY: number;
+  raf: number;
+}
+
+let drag: DragState | null = null;
+
+/** 视口上下沿自动滚动触发区与速度 */
+const EDGE_SCROLL_ZONE = 48;
+const EDGE_SCROLL_SPEED = 12;
+
+listEl.addEventListener("dragstart", (e) => {
+  const dragEvent = e as DragEvent;
+  const target = dragEvent.target as HTMLElement;
+  // 行内控件（下拉/日期/按钮）交互优先，不误起拖拽
+  if (target.closest("select, input, button")) {
+    dragEvent.preventDefault();
+    return;
+  }
+  const item = target.closest<HTMLElement>(".todo-item");
+  const id = item?.dataset.id;
+  if (!item || !id) return;
+  const visible = applyFilter(sortTodos(todos), view);
+  if (visible.length < 2) return; // 无可移动空间，不起拖
+  const originalIndex = visible.findIndex((t) => t.id === id);
+  if (originalIndex < 0) return;
+
+  item.classList.add("dragging");
+  // Firefox 需要 setData 才会进入拖拽；id 即拖拽数据
+  dragEvent.dataTransfer?.setData("text/plain", id);
+  if (dragEvent.dataTransfer) dragEvent.dataTransfer.effectAllowed = "move";
+
+  const placeholder = document.createElement("li");
+  placeholder.className = "drag-placeholder";
+  placeholder.style.height = `${item.offsetHeight}px`;
+  item.before(placeholder); // 初始占位 = 原位
+
+  drag = { id, placeholder, lastIndex: originalIndex, originalIndex, pointerY: dragEvent.clientY, raf: 0 };
+  startAutoScroll();
+});
+
+listEl.addEventListener("dragover", (e) => {
+  const dragEvent = e as DragEvent;
+  if (!drag) return;
+  dragEvent.preventDefault(); // 允许放置
+  if (dragEvent.dataTransfer) dragEvent.dataTransfer.dropEffect = "move";
+  drag.pointerY = dragEvent.clientY;
+  const index = insertionIndex();
+  if (index !== drag.lastIndex) movePlaceholder(index);
+});
+
+// drop 的提交统一在 dragend 里做（dragend 在 drop 后必触发，取消拖拽也会触发）
+listEl.addEventListener("drop", (e) => e.preventDefault());
+
+listEl.addEventListener("dragend", () => finishDrag());
+
+/** 计算占位符应处的插入位：指针 Y 与各项几何中点比较（剔除被拖项） */
+function insertionIndex(): number {
+  if (!drag) return 0;
+  const items = [...listEl.querySelectorAll<HTMLElement>(".todo-item:not(.dragging)")];
+  for (let i = 0; i < items.length; i++) {
+    const rect = items[i].getBoundingClientRect();
+    if (drag.pointerY < rect.top + rect.height / 2) return i;
+  }
+  return items.length;
+}
+
+/** 只移动占位节点（不重渲染）；位次未变时调用方跳过，避免高频 dragover 重复操作 DOM */
+function movePlaceholder(index: number): void {
+  if (!drag) return;
+  const items = [...listEl.querySelectorAll<HTMLElement>(".todo-item:not(.dragging)")];
+  drag.lastIndex = index;
+  if (index >= items.length) listEl.append(drag.placeholder);
+  else items[index].before(drag.placeholder);
+}
+
+/** 收尾：清理占位与浮起样式；占位位置 ≠ 原位则一次性提交 reorder 命令 */
+function finishDrag(): void {
+  if (!drag) return;
+  const { id, placeholder, lastIndex } = drag;
+  cancelAnimationFrame(drag.raf);
+  placeholder.remove();
+  listEl.querySelector<HTMLElement>(".todo-item.dragging")?.classList.remove("dragging");
+  drag = null;
+
+  const visible = applyFilter(sortTodos(todos), view);
+  const currentIndex = visible.findIndex((t) => t.id === id);
+  if (currentIndex < 0 || lastIndex === currentIndex) return; // 原位放下：无命令无渲染
+  const plan = planReorder(todos, id, lastIndex, visible);
+  if (!plan) return;
+  todos = plan.todos;
+  stack.push(makeReorderCommand(plan));
+  persist();
+}
+
+/** 边缘自动滚动：拖拽期间 rAF 循环，指针接近视口上下沿时逐帧滚动，并跟随滚动刷新占位位次 */
+function startAutoScroll(): void {
+  if (!drag) return;
+  const step = (): void => {
+    if (!drag) return;
+    if (drag.pointerY < EDGE_SCROLL_ZONE) window.scrollBy(0, -EDGE_SCROLL_SPEED);
+    else if (drag.pointerY > window.innerHeight - EDGE_SCROLL_ZONE) {
+      window.scrollBy(0, EDGE_SCROLL_SPEED);
+    }
+    const index = insertionIndex();
+    if (index !== drag.lastIndex) movePlaceholder(index);
+    drag.raf = requestAnimationFrame(step);
+  };
+  drag.raf = requestAnimationFrame(step);
+}
+
+// Esc 取消拖拽：占位复位到原位后正常收尾（原位判定 ⇒ 不产生命令）
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !drag) return;
+  movePlaceholder(drag.originalIndex);
+  finishDrag();
 });
 
 // ---------- 复合筛选（分类/状态二选一） ----------

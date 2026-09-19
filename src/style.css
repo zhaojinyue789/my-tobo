@@ -849,6 +849,21 @@ body {
   border-radius: 12px;
 }
 
+/* 拖拽中：被拖项半透明浮起；占位符虚线框指示落点（只移占位节点，列表不重渲染） */
+.todo-item.dragging {
+  opacity: 0.4;
+  background: var(--card);
+  box-shadow: var(--shadow-pop);
+  transform: scale(1.01);
+}
+
+.drag-placeholder {
+  border: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
+  border-radius: 10px;
+  opacity: 0.55;
+}
+
 .todo-footer {
   display: flex;
   justify-content: space-between;
