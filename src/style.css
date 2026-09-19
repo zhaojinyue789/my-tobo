@@ -480,6 +480,44 @@ body {
   font-size: 12px;
 }
 
+/* 撤销/重做按钮组：视觉语言与右上角同步按钮一致 */
+.undo-group {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.undo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.undo-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.undo-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.undo-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* 「+ 新建分类」触发器：链接样式常驻筛选行右侧，不抢视觉焦点 */
 .cat-trigger {
   display: inline-flex;

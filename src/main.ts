@@ -23,6 +23,8 @@ import { ensurePermission, notifyTodoDue } from "./notify";
 import { SyncController, loadSyncConfig, loadSyncGistId, type SyncStatus } from "./sync";
 import {
   CommandStack,
+  applyForward,
+  applyInverse,
   loadUndoState,
   makeClearAllCommand,
   makeCreateCommand,
@@ -34,7 +36,7 @@ import "./style.css";
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const { filterButton, filterMenu, newCategoryInput, addCategoryBtn, categoryHint } =
+const { filterButton, filterMenu, undoBtn, redoBtn, newCategoryInput, addCategoryBtn, categoryHint } =
   buildToolbar(listEl);
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
@@ -93,6 +95,8 @@ function render(): void {
   countEl.textContent = `剩余 ${remaining} 项未完成`;
   footer.classList.toggle("hidden", live.length === 0);
   clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
+  undoBtn.disabled = !stack.canUndo;
+  redoBtn.disabled = !stack.canRedo;
 }
 
 /** 复合筛选同步：分类消失（最后一条被删）时回退未筛选，再按当前视图态刷新按钮与菜单 */
@@ -298,6 +302,42 @@ listEl.addEventListener("change", (e) => {
   persist();
   // 即时到期检查：改日期为过期值 → 立即通知并标记；改分类时 isOverdue 恒为否、自然跳过
   if (updated) void notifyTodoOnce(updated);
+});
+
+// ---------- 撤销 / 重做 ----------
+
+function doUndo(): void {
+  const cmd = stack.popUndo();
+  if (!cmd) return; // 空栈无副作用不报错
+  todos = applyInverse(cmd, todos);
+  stack.pushRedo(cmd);
+  persist();
+}
+
+function doRedo(): void {
+  const cmd = stack.popRedo();
+  if (!cmd) return;
+  todos = applyForward(cmd, todos);
+  stack.push(cmd); // push 清空 redo：重做后产生新动作即分叉的正常语义
+  persist();
+}
+
+undoBtn.addEventListener("click", doUndo);
+redoBtn.addEventListener("click", doRedo);
+
+// 全局快捷键：Ctrl+Z / Ctrl+Shift+Z（Mac 兼容 Cmd）；输入框聚焦时交给原生文本撤销，屏蔽全局撤销
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (e.key.toLowerCase() !== "z") return;
+  const el = document.activeElement;
+  const typing =
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    (el instanceof HTMLElement && el.isContentEditable);
+  if (typing) return;
+  e.preventDefault();
+  if (e.shiftKey) doRedo();
+  else doUndo();
 });
 
 // ---------- 复合筛选（分类/状态二选一） ----------

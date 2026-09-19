@@ -53,6 +53,9 @@ export interface ToolbarRefs {
   filterButton: HTMLButtonElement;
   /** 复合筛选菜单（选项每次 render 由 syncFilterMenu 重建） */
   filterMenu: HTMLElement;
+  /** 撤销/重做按钮：禁用态随 render 同步 */
+  undoBtn: HTMLButtonElement;
+  redoBtn: HTMLButtonElement;
   newCategoryInput: HTMLInputElement;
   addCategoryBtn: HTMLButtonElement;
   /** 新建分类的反馈行（空值/重复/成功提示） */
@@ -91,6 +94,45 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
 
   filterWrap.append(filterButton, filterMenu);
 
+  // 撤销/重做按钮组：沿用同步按钮的视觉语言，禁用态由 main 的 render 同步
+  const strokeSvg = (paths: string): SVGSVGElement => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = paths;
+    return svg;
+  };
+  const undoGroup = document.createElement("span");
+  undoGroup.className = "undo-group";
+  const undoBtn = document.createElement("button");
+  undoBtn.id = "undo-btn";
+  undoBtn.className = "undo-btn";
+  undoBtn.type = "button";
+  undoBtn.title = "撤销 (Ctrl+Z)";
+  undoBtn.setAttribute("aria-label", "撤销");
+  undoBtn.disabled = true;
+  undoBtn.append(
+    strokeSvg('<path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />'),
+  );
+  const redoBtn = document.createElement("button");
+  redoBtn.id = "redo-btn";
+  redoBtn.className = "undo-btn";
+  redoBtn.type = "button";
+  redoBtn.title = "重做 (Ctrl+Shift+Z)";
+  redoBtn.setAttribute("aria-label", "重做");
+  redoBtn.disabled = true;
+  redoBtn.append(
+    strokeSvg('<path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />'),
+  );
+  undoGroup.append(undoBtn, redoBtn);
+
   // 「+ 新建分类」触发器：链接样式常驻筛选行右侧，默认收起不占行
   const trigger = document.createElement("button");
   trigger.className = "cat-trigger";
@@ -104,7 +146,7 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   categoryHint.className = "category-hint hidden";
   categoryHint.setAttribute("role", "status");
   // 提示放在筛选行内而非编辑区里：编辑区自动收起后「已添加」仍可见
-  filters.append(filterWrap, trigger, categoryHint);
+  filters.append(filterWrap, undoGroup, trigger, categoryHint);
 
   // 行内编辑区：默认收起（0 高度），点击触发器后在下方滑出输入框 + 确定按钮
   const editorWrap = document.createElement("div");
@@ -167,7 +209,16 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
 
   root.append(filters, editorWrap);
   before.before(root);
-  return { root, filterButton, filterMenu, newCategoryInput, addCategoryBtn, categoryHint };
+  return {
+    root,
+    filterButton,
+    filterMenu,
+    undoBtn,
+    redoBtn,
+    newCategoryInput,
+    addCategoryBtn,
+    categoryHint,
+  };
 }
 
 /** 复合筛选同步：按当前视图态重建菜单选项、标记选中项并更新按钮文字 */
