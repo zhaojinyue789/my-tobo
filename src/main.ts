@@ -5,6 +5,7 @@ import {
   isValidDueDate,
   loadTodos,
   markDeleted,
+  nextAppendOrder,
   normalizeCategory,
   saveTodos,
   sortTodos,
@@ -197,7 +198,9 @@ form.addEventListener("submit", (e) => {
   const category = rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
   const todo = createTodo(text);
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
-  // 追加到数组末尾：显示顺序由 sortTodos（order/createdAt 升序）权威决定，新项默认排末尾（DECISIONS.md D1）
+  // 新项默认排末尾：创建即赋末序（末项 + STEP，空表从 STEP 起，任务书 ⑤）
+  todo.order = nextAppendOrder(todos);
+  // 追加到数组末尾：显示顺序由 sortTodos（order/createdAt 升序）权威决定（DECISIONS.md D1）
   todos.push(todo);
   stack.push(makeCreateCommand(todo));
   input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类

@@ -1,4 +1,12 @@
-import { isDeleted, markDeleted, type Todo } from "./todo";
+import {
+  isDeleted,
+  markDeleted,
+  type OrderRestore,
+  type OrderWrite,
+  type RebalancePlan,
+  type ReorderPlan,
+  type Todo,
+} from "./todo";
 
 /**
  * undo/redo 命令栈：仅本地持久化（localStorage），不同步 Gist。
@@ -19,18 +27,6 @@ export interface UpdateChanges {
   completed?: boolean;
   category?: string | null;
   dueDate?: string | null;
-}
-
-/** order 写入项（reorder/rebalance 正向应用） */
-export interface OrderWrite {
-  id: string;
-  order: number;
-}
-
-/** order 还原项；order = null 表示该条目此前没有 order 字段，撤销时移除 */
-export interface OrderRestore {
-  id: string;
-  order: number | null;
 }
 
 export type Command =
@@ -289,6 +285,24 @@ export function makeClearAllCommand(targets: Todo[]): Command {
     type: "clearAll",
     payload: { targets: targets.map((t) => ({ id: t.id })) },
     inverse: { restores: targets.map((t) => ({ id: t.id, deletedAt: null })) },
+  };
+}
+
+/** 一次拖拽 = 一条 reorder 命令（writes 已含首次物化与内联重整，一次撤销完整还原） */
+export function makeReorderCommand(plan: ReorderPlan): Command {
+  return {
+    type: "reorder",
+    payload: { id: plan.id, writes: plan.writes },
+    inverse: { restores: plan.restores },
+  };
+}
+
+/** 独立批量重整命令 */
+export function makeRebalanceCommand(plan: RebalancePlan): Command {
+  return {
+    type: "rebalance",
+    payload: { writes: plan.writes },
+    inverse: { restores: plan.restores },
   };
 }
 
