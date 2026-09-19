@@ -24,8 +24,10 @@
 
 ### 场景 C：远端脏数据防御（防白屏崩溃）
 
-1. **操作**：控制台执行：
-   `localStorage.setItem('my-tobo.sync', JSON.stringify({gistId: "xxx", token: "xxx"}))`
+1. **操作**：确认已配置同步。浏览器 / PWA 环境配置在 localStorage 的
+   `my-tobo.sync.gistId` 与 `my-tobo.token` 两个键（旧键 `my-tobo.sync` 已废弃，
+   仅启动迁移时读取一次，运行中写它无效）；桌面端 Token 在 Store 文件
+   （`%APPDATA%\com.mytobo.desktop\my-tobo.json`）。
    手动将 Gist 中的 JSON 内容改坏（例如删除某个 todo 的 `id` 字段或把 `text` 改为数字）。
 2. **动作**：点击“立即同步”拉取脏数据。
 3. **预期结果**：
