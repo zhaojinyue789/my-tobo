@@ -506,3 +506,27 @@ body {
     padding-top: 24px;
   }
 }
+
+/* ---------- 阶段 4：分类 / 截止日期 / 工具栏（最小布局；.overdue 视觉样式另行定义） ---------- */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+.filter-select,
+.todo-category,
+.todo-due,
+.new-todo-category,
+.new-category {
+  font: inherit;
+}
+.add-category {
+  font: inherit;
+  cursor: pointer;
+}
+.category-hint {
+  font-size: 12px;
+  opacity: 0.75;
+}

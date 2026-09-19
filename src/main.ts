@@ -1,19 +1,32 @@
 import {
   createTodo,
   isDeleted,
+  isOverdue,
+  isValidDueDate,
   loadTodos,
   markDeleted,
+  normalizeCategory,
   saveTodos,
   type Todo,
 } from "./todo";
-import { filterTodos, renderList, type Filter } from "./ui";
+import {
+  applyFilter,
+  buildSelectOption,
+  buildToolbar,
+  categoryOptions,
+  renderList,
+  type Filter,
+  type View,
+} from "./ui";
+import { ensurePermission, notifyTodoDue } from "./notify";
 import { SyncController, loadSyncConfig, loadSyncGistId, type SyncStatus } from "./sync";
 import "./style.css";
 
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const filtersEl = document.querySelector<HTMLElement>("#filters")!;
+const { filterCategory, filterStatus, newCategoryInput, addCategoryBtn, categoryHint } =
+  buildToolbar(listEl);
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
@@ -34,7 +47,10 @@ const gistCloseBtn = document.querySelector<HTMLButtonElement>("#gist-close")!;
 const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
 
 let todos: Todo[] = loadTodos();
-let filter: Filter = "all";
+/** 视图态：只影响渲染，不碰数据、不写存储、不触发同步 */
+let view: View = { category: "__all__", status: "all" };
+/** 手动新建的分类：仅内存（不持久化，重启消失且无数据风险），与派生集合合并后进入各下拉框 */
+const manualCategories = new Set<string>();
 
 const sync = new SyncController({
   onTodos: (merged) => {
@@ -45,13 +61,19 @@ const sync = new SyncController({
 });
 
 function render(): void {
-  const visible = filterTodos(todos, filter);
+  const categories = [...categoryOptions(todos), ...manualCategories].sort((a, b) =>
+    a.localeCompare(b, "zh"),
+  );
+  syncCategoryFilter(categories);
+  syncNewTodoCategory(categories);
+
   renderList(
     listEl,
-    visible,
+    applyFilter(todos, view),
     todos.some((t) => !isDeleted(t))
       ? "该筛选下暂无待办"
       : "这里空空如也，添加一条待办吧～",
+    categories,
   );
 
   const live = todos.filter((t) => !isDeleted(t));
@@ -59,10 +81,24 @@ function render(): void {
   countEl.textContent = `剩余 ${remaining} 项未完成`;
   footer.classList.toggle("hidden", live.length === 0);
   clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
+}
 
-  for (const btn of filtersEl.querySelectorAll<HTMLButtonElement>(".filter")) {
-    btn.classList.toggle("is-active", btn.dataset.filter === filter);
+/** 分类筛选下拉：全部/未分类/现存分类；当前视图分类已消失（最后一条被删）时回退「全部」 */
+function syncCategoryFilter(categories: string[]): void {
+  filterCategory.replaceChildren();
+  filterCategory.append(
+    buildSelectOption("__all__", "全部"),
+    buildSelectOption("__uncat__", "未分类"),
+    ...categories.map((name) => buildSelectOption(name, name)),
+  );
+  if (
+    view.category !== "__all__" &&
+    view.category !== "__uncat__" &&
+    !categories.includes(view.category)
+  ) {
+    view.category = "__all__";
   }
+  filterCategory.value = view.category;
 }
 
 function persist(): void {
@@ -70,6 +106,40 @@ function persist(): void {
   storageWarning.classList.toggle("hidden", saveTodos(todos));
   sync.onLocalChange();
   render();
+}
+
+// ---------- 过期通知（阶段 5）----------
+
+/** 单条即时通知：过期且未通知 → 发送并标记 notified；未授权/发送失败不标记，下次触发重试 */
+async function notifyTodoOnce(todo: Todo): Promise<void> {
+  if (todo.notified || !isOverdue(todo)) return;
+  if (!(await ensurePermission())) return;
+  try {
+    await notifyTodoDue(todo);
+  } catch {
+    return; // 系统通知服务失败：静默降级，不阻塞主流程
+  }
+  // 标记不 bump updatedAt：通知是设备本地 UX 状态，不参与 LWW 竞争
+  todos = todos.map((t) => (t.id === todo.id ? { ...t, notified: true } : t));
+  persist();
+}
+
+/** 启动批量：全部过期未通知条目各发一条；单条失败跳过，成功者统一落盘一次 */
+async function notifyOverdueStartup(): Promise<void> {
+  const targets = todos.filter((t) => isOverdue(t) && !t.notified);
+  if (targets.length === 0) return;
+  if (!(await ensurePermission())) return;
+  let changed = false;
+  for (const todo of targets) {
+    try {
+      await notifyTodoDue(todo);
+    } catch {
+      continue;
+    }
+    todos = todos.map((t) => (t.id === todo.id ? { ...t, notified: true } : t));
+    changed = true;
+  }
+  if (changed) persist();
 }
 
 function renderSyncStatus(status: SyncStatus): void {
@@ -110,9 +180,17 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
-  todos.unshift(createTodo(text));
-  input.value = "";
+  // 极罕见竞态：选中的分类在提交前已消失（无引用且非手动新建）→ 降级为未分类，不丢待办
+  const known = new Set([...categoryOptions(todos), ...manualCategories]);
+  const rawCategory = newTodoCategory.value;
+  const category = rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
+  const todo = createTodo(text);
+  if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
+  todos.unshift(todo);
+  input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
   persist();
+  // 即时到期检查：新建表单暂无日期输入，当前恒不触发；为后续表单扩展预留（任务 D）
+  void notifyTodoOnce(todo);
 });
 
 // 部分内嵌浏览器不触发表单隐式提交，keydown 兜底；preventDefault 避免双重提交
@@ -121,6 +199,34 @@ input.addEventListener("keydown", (e) => {
   e.preventDefault();
   form.requestSubmit();
 });
+
+// 新增表单的分类选择器：插在输入框与提交按钮之间，选项每次渲染后同步更新
+const newTodoCategory = document.createElement("select");
+newTodoCategory.id = "new-todo-category";
+newTodoCategory.className = "new-todo-category";
+newTodoCategory.setAttribute("aria-label", "新待办的分类");
+form.insertBefore(
+  newTodoCategory,
+  form.querySelector<HTMLButtonElement>("button[type=submit]"),
+);
+
+/** 选项 = 未分类("") + 派生分类 + 手动新建；保留当前选中（连续录入），无则按视图态默认 */
+function syncNewTodoCategory(categories: string[]): void {
+  const previous = newTodoCategory.value;
+  newTodoCategory.replaceChildren();
+  const uncat = buildSelectOption("", "未分类");
+  newTodoCategory.append(
+    uncat,
+    ...categories.map((name) => buildSelectOption(name, name)),
+  );
+  const fallback =
+    view.category !== "__all__" &&
+    view.category !== "__uncat__" &&
+    categories.includes(view.category)
+      ? view.category
+      : "";
+  newTodoCategory.value = previous && categories.includes(previous) ? previous : fallback;
+}
 
 listEl.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
@@ -139,10 +245,68 @@ listEl.addEventListener("click", (e) => {
   persist();
 });
 
-filtersEl.addEventListener("click", (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".filter");
-  if (!btn) return;
-  filter = btn.dataset.filter as Filter;
+// 行内控件（分类 select / 日期 input）：change 才写数据并落盘；渲染时直接赋 .value 不触发事件，无回写死循环
+listEl.addEventListener("change", (e) => {
+  const target = e.target as HTMLSelectElement | HTMLInputElement;
+  const item = target.closest<HTMLElement>(".todo-item");
+  if (!item) return;
+  const current = todos.find((t) => t.id === item.dataset.id);
+  if (!current) return;
+  let updated: Todo | undefined;
+
+  if (target.classList.contains("todo-category")) {
+    const next = target.value === "__uncat__" ? undefined : normalizeCategory(target.value);
+    if ((current.category ?? undefined) === (next ?? undefined)) return;
+    todos = todos.map((t) => {
+      if (t.id !== current.id) return t;
+      updated = { ...t, category: next, updatedAt: Date.now() };
+      return updated;
+    });
+  } else if (target.classList.contains("todo-due")) {
+    const next = isValidDueDate(target.value) ? target.value : undefined; // 非法输入按清空处理，不报错
+    if ((current.dueDate ?? undefined) === (next ?? undefined)) return;
+    todos = todos.map((t) => {
+      if (t.id !== current.id) return t;
+      updated = { ...t, dueDate: next, updatedAt: Date.now() };
+      return updated;
+    });
+  } else {
+    return;
+  }
+  persist();
+  // 即时到期检查：改日期为过期值 → 立即通知并标记；改分类时 isOverdue 恒为否、自然跳过
+  if (updated) void notifyTodoOnce(updated);
+});
+
+// 视图态筛选：只改 view 后 rAF 重渲染，绝不碰数据/存储/同步
+filterCategory.addEventListener("change", () => {
+  view.category = filterCategory.value;
+  requestAnimationFrame(render);
+});
+
+filterStatus.addEventListener("change", () => {
+  view.status = filterStatus.value as Filter;
+  requestAnimationFrame(render);
+});
+
+// 新建分类：不产生独立实体，仅加入内存集合；空值/重复拒绝
+let hintTimer: ReturnType<typeof setTimeout> | undefined;
+function showCategoryHint(message: string): void {
+  categoryHint.textContent = message;
+  categoryHint.classList.remove("hidden");
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => categoryHint.classList.add("hidden"), 2500);
+}
+
+addCategoryBtn.addEventListener("click", () => {
+  const name = normalizeCategory(newCategoryInput.value);
+  if (!name) return showCategoryHint("分类名不能为空或含非法字符");
+  if (manualCategories.has(name) || categoryOptions(todos).includes(name)) {
+    return showCategoryHint(`分类「${name}」已存在`);
+  }
+  manualCategories.add(name);
+  newCategoryInput.value = "";
+  showCategoryHint(`已添加「${name}」`);
   render();
 });
 
@@ -231,6 +395,8 @@ gistDisconnectBtn.addEventListener("click", () => {
 
 input.focus();
 render();
+// 启动批量过期通知：N 条过期未通知各发一条；权限未授予/失败静默降级
+void notifyOverdueStartup();
 // 启动即拉取一次远端（未配置时静默显示“未开启同步”）
 void sync.syncNow();
 // 自动同步循环：30 秒轮询 + 失败退避重试

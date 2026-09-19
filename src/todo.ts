@@ -7,14 +7,58 @@ export interface Todo {
   updatedAt: number;
   /** 删除墓碑：有值表示已删除，保留 30 天后物理清除，防止删除被同步复活 */
   deletedAt?: number;
+  /** 自由文本分类，未分类为 undefined（合法值经 normalizeCategory 清洗） */
+  category?: string;
+  /** 截止日期 YYYY-MM-DD，未设置为 undefined */
+  dueDate?: string;
+  /** 过期通知已发送：设备本地 UX 状态；随数据同步但标记时不 bump updatedAt（不参与 LWW） */
+  notified?: boolean;
 }
 
 const STORAGE_KEY = "my-tobo.todos";
 /** 墓碑保留时长：超过后物理清除（另一端 30 天内未同步才会受影响） */
 const TOMBSTONE_TTL = 30 * 24 * 60 * 60 * 1000;
+/** 分类名上限（按 UTF-16 码元计，emoji/部分生僻字算 2） */
+const CATEGORY_MAX_LENGTH = 20;
+/** 分类名禁用字符：/ \ < > : " | ? * 及控制字符（U+0000–U+001F、U+007F） */
+const CATEGORY_FORBIDDEN = /[/\\<>:"|?*\u0000-\u001f\u007f]/;
+/** 一次性迁移标记：category/dueDate 字段引入后，首次加载把迁移结果写回存储并置位，之后不再触发写回 */
+const MIGRATION_KEY_CATEGORY_DUE_DATE = "my-tobo.migrated.category_due_date";
 
 export function isDeleted(todo: Todo): boolean {
   return todo.deletedAt != null;
+}
+
+/** 分类清洗：trim 后非空、≤20 字符、无禁用字符才合法；否则视为未填写 */
+export function normalizeCategory(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > CATEGORY_MAX_LENGTH || CATEGORY_FORBIDDEN.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+export function isValidCategory(value: unknown): boolean {
+  return normalizeCategory(value) !== undefined;
+}
+
+export function isValidDueDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** 本地时区的今天；toISOString() 是 UTC，时区边缘会让“今天”错一天 */
+export function todayISO(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/** 已完成/已删除永不过期；无 dueDate 不过期；当天不算过期（严格小于） */
+export function isOverdue(t: Todo, today: string = todayISO()): boolean {
+  if (t.completed || isDeleted(t) || !t.dueDate) return false;
+  return t.dueDate < today;
 }
 
 export function loadTodos(): Todo[] {
@@ -23,7 +67,7 @@ export function loadTodos(): Todo[] {
     if (!raw) return [];
     const data: unknown = JSON.parse(raw);
     if (!Array.isArray(data)) return [];
-    return data
+    const todos = data
       .filter(
         (item): item is Todo =>
           typeof item === "object" &&
@@ -33,18 +77,37 @@ export function loadTodos(): Todo[] {
           typeof (item as Todo).completed === "boolean",
       )
       .map(migrate);
+    runStartupMigration(todos);
+    return todos;
   } catch {
     return [];
   }
 }
 
-/** 旧版本数据没有 updatedAt/deletedAt，读取时补齐 */
+/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/notified，读取时补齐；新字段非法值按未填写处理，条目保留 */
 function migrate(item: Todo): Todo {
   return {
     ...item,
     updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : item.createdAt,
     deletedAt: typeof item.deletedAt === "number" ? item.deletedAt : undefined,
+    category: normalizeCategory(item.category),
+    dueDate: isValidDueDate(item.dueDate) ? item.dueDate : undefined,
+    notified: typeof item.notified === "boolean" ? item.notified : false,
   };
+}
+
+/**
+ * 一次性迁移收尾：migrate 每次加载都幂等执行，这里只在首次（无标记时）把结果写回存储一次并置位。
+ * 异常必须就地吞掉——若冒泡到 loadTodos 外层 catch，会把已加载的列表整表变成 []。
+ */
+function runStartupMigration(todos: Todo[]): void {
+  try {
+    if (localStorage.getItem(MIGRATION_KEY_CATEGORY_DUE_DATE)) return;
+    saveTodos(todos);
+    localStorage.setItem(MIGRATION_KEY_CATEGORY_DUE_DATE, "1");
+  } catch {
+    // 标记/写回失败（配额满、只读模式等）：静默忽略，不阻塞加载；下次启动重试
+  }
 }
 
 export function saveTodos(todos: Todo[]): boolean {

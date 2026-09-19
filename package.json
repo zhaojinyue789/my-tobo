@@ -16,6 +16,7 @@
     "vite-plugin-singlefile": "^2.3.3"
   },
   "dependencies": {
+    "@tauri-apps/plugin-notification": "^2.4.0",
     "@tauri-apps/plugin-store": "^2.4.5"
   }
 }
