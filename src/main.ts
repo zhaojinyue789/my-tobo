@@ -18,6 +18,7 @@ import {
 import {
   clearFocusState,
   computeFocusElapsed,
+  dateShift,
   formatHMS,
   loadDaily,
   loadFocusState,
@@ -938,7 +939,7 @@ function closeReview(): void {
   promoteDaily(todayISO());
 }
 
-/** 回顾行（D⑥ 只读骨架；D⑦ 接入三项操作） */
+/** 回顾行：事项 + 截止 + 三项操作（移到明天 / 改期 / 不再做），全部走 update 命令可撤销 */
 function reviewRow(t: Todo): HTMLLIElement {
   const li = document.createElement("li");
   li.className = "review-item";
@@ -949,8 +950,91 @@ function reviewRow(t: Todo): HTMLLIElement {
   const due = document.createElement("span");
   due.className = "review-item-due";
   due.textContent = t.dueDate ? formatDueZh(t.dueDate) : "";
-  li.append(text, due);
+  const actions = document.createElement("span");
+  actions.className = "review-item-actions";
+  actions.append(
+    reviewAct("移到明天", () => reviewMoveTomorrow(t.id)),
+    reviewAct("改期", () => reviewReschedule(li, t.id)),
+    reviewAct("不再做", () => reviewNotDo(t.id)),
+  );
+  li.append(text, due, actions);
   return li;
+}
+
+function reviewAct(label: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "review-act";
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+/** 应用回顾动作（dueDate/today 两个字段，单条 update 命令，可一次撤销） */
+function reviewApply(id: string, before: { dueDate?: string | null; today?: boolean | null }, after: { dueDate?: string | null; today?: boolean | null }): void {
+  todos = todos.map((t) => {
+    if (t.id !== id) return t;
+    const next: Todo = { ...t, updatedAt: Date.now() };
+    if (after.dueDate !== undefined) next.dueDate = after.dueDate === null ? undefined : after.dueDate;
+    if (after.today !== undefined) next.today = after.today === null ? undefined : after.today;
+    return next;
+  });
+  stack.push(makeUpdateCommand(id, before, after));
+  persist();
+}
+
+/** 处理后重建面板内容：全部处理完 → 只剩摘要与空态（关闭即换日） */
+function refreshReview(): void {
+  const unfinished = reviewUnfinished();
+  reviewEmpty.classList.toggle("hidden", unfinished.length > 0);
+  reviewList.replaceChildren(...unfinished.map((t) => reviewRow(t)));
+}
+
+function reviewMoveTomorrow(id: string): void {
+  const current = todos.find((t) => t.id === id);
+  if (!current) return;
+  const tomorrow = dateShift(todayISO(), 1);
+  // 移到明天 = 改期 + 移出今天（今天 false，明天由 dueDate 自动拉回）
+  reviewApply(
+    id,
+    { dueDate: current.dueDate ?? null, today: current.today ?? null },
+    { dueDate: tomorrow, today: false },
+  );
+  refreshReview();
+}
+
+function reviewNotDo(id: string): void {
+  const current = todos.find((t) => t.id === id);
+  if (!current) return;
+  reviewApply(id, { today: current.today ?? null }, { today: false });
+  refreshReview();
+}
+
+/** 改期：行内展开日期输入；改到非今天时同时移出今天（避免 today=true 压过自动规则） */
+function reviewReschedule(li: HTMLLIElement, id: string): void {
+  const current = todos.find((t) => t.id === id);
+  if (!current) return;
+  const actions = li.querySelector<HTMLElement>(".review-item-actions");
+  if (!actions) return;
+  const today = todayISO();
+  actions.replaceChildren();
+  const input = document.createElement("input");
+  input.type = "date";
+  input.className = "review-date-input";
+  input.value = current.dueDate ?? today;
+  const applyBtn = reviewAct("确定", () => {
+    if (!isValidDueDate(input.value)) return; // 非法输入不提交
+    const nextToday = input.value <= today ? current.today ?? null : false;
+    reviewApply(
+      id,
+      { dueDate: current.dueDate ?? null, today: current.today ?? null },
+      { dueDate: input.value, today: nextToday },
+    );
+    refreshReview();
+  });
+  const cancelBtn = reviewAct("取消", () => refreshReview());
+  actions.append(input, applyBtn, cancelBtn);
+  input.focus();
 }
 
 reviewCloseBtn.addEventListener("click", closeReview);
