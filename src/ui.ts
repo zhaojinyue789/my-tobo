@@ -1,5 +1,5 @@
 import { isDeleted, isOverdue, type Todo } from "./todo";
-import type { TodayTab } from "./today";
+import { isTodayMember, type TodayTab } from "./today";
 
 export type Filter = "all" | "active" | "completed";
 
@@ -341,16 +341,24 @@ export function renderList(
     dueInput.value = todo.dueDate ?? ""; // 属性赋值不触发 change，无回写死循环
     if (!todo.dueDate) dueInput.classList.add("is-empty"); // 空值时 CSS 只显示日历图标
 
+    // 「今天」pin：实心=在今日（手动或自动），空心=不在；点击在加入/移出间切换（三态见 DECISIONS.md D12）
+    const todayPin = document.createElement("button");
+    todayPin.type = "button";
+    todayPin.className = "todo-today-pin" + (isTodayMember(todo) ? " is-active" : "");
+    todayPin.setAttribute("aria-label", isTodayMember(todo) ? "移出今天" : "加入今天");
+    todayPin.setAttribute("aria-pressed", String(isTodayMember(todo)));
+    todayPin.textContent = isTodayMember(todo) ? "◉" : "○";
+
     const del = document.createElement("button");
     del.type = "button";
     del.className = "todo-delete";
     del.setAttribute("aria-label", "删除");
     del.textContent = "✕";
 
-    // 分类 + 日期包进右侧元信息组，与文本对齐
+    // 今天 pin + 分类 + 日期包进右侧元信息组，与文本对齐
     const meta = document.createElement("div");
     meta.className = "todo-meta";
-    meta.append(categorySelect, dueInput);
+    meta.append(todayPin, categorySelect, dueInput);
 
     li.append(toggle, label, meta, del);
     fragment.append(li);

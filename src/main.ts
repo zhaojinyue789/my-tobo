@@ -15,7 +15,7 @@ import {
   todayISO,
   type Todo,
 } from "./todo";
-import { loadTab, saveTab, todayMembers, type TodayTab } from "./today";
+import { loadTab, saveTab, splitTodayOverdue, isTodayMember, todayMembers, type TodayTab } from "./today";
 import {
   applyFilter,
   buildSelectOption,
@@ -45,8 +45,13 @@ import "./style.css";
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
+const listArea = document.querySelector<HTMLElement>("#list-area")!;
+const overdueBox = document.querySelector<HTMLElement>("#overdue-box")!;
+const overdueListEl = document.querySelector<HTMLUListElement>("#overdue-list")!;
+const overdueTitle = document.querySelector<HTMLSpanElement>("#overdue-title")!;
+const overdueToggle = document.querySelector<HTMLButtonElement>("#overdue-toggle")!;
 const { filterButton, filterMenu, undoBtn, redoBtn, newCategoryInput, addCategoryBtn, categoryHint } =
-  buildToolbar(listEl);
+  buildToolbar(overdueBox);
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
@@ -120,11 +125,23 @@ function render(): void {
   syncFilter(categories);
   syncNewTodoCategory(categories);
 
-  // tab 是过滤层：today 成员 or 全量；排序仍由 sortTodos（order 主序）权威决定（DESIGN P2-3）
+  // tab 是过滤层；排序仍由 sortTodos（order 主序）权威决定；「今天」tab 过期分组置顶（DECISIONS.md D15）
   const base = view.tab === "today" ? members : todos;
+  const sorted = sortTodos(base);
+  let mainItems: Todo[];
+  if (view.tab === "today") {
+    const { overdue, rest } = splitTodayOverdue(sorted, today);
+    overdueBox.classList.toggle("hidden", overdue.length === 0);
+    overdueTitle.textContent = `已过期 ${overdue.length} 项`;
+    renderList(overdueListEl, overdue, "", categories);
+    mainItems = rest;
+  } else {
+    overdueBox.classList.add("hidden");
+    mainItems = sorted;
+  }
   renderList(
     listEl,
-    applyFilter(sortTodos(base), view),
+    applyFilter(mainItems, view),
     base.length > 0
       ? "该筛选下暂无待办"
       : view.tab === "today"
@@ -259,6 +276,8 @@ form.addEventListener("submit", (e) => {
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
   // 新项默认排末尾：创建即赋末序（末项 + STEP，空表从 STEP 起，任务书 ⑤）
   todo.order = nextAppendOrder(todos);
+  // 「今天」tab 下快速新建默认进今天（任务书 B③）；「全部」tab 走三态自动规则
+  if (view.tab === "today") todo.today = true;
   // 追加到数组末尾：显示顺序由 sortTodos（order/createdAt 升序）权威决定（DECISIONS.md D1）
   todos.push(todo);
   stack.push(makeCreateCommand(todo));
@@ -303,7 +322,7 @@ function syncNewTodoCategory(categories: string[]): void {
   newTodoCategory.value = previous && categories.includes(previous) ? previous : fallback;
 }
 
-listEl.addEventListener("click", (e) => {
+listArea.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
   const item = target.closest<HTMLElement>(".todo-item");
   if (!item) return;
@@ -315,6 +334,11 @@ listEl.addEventListener("click", (e) => {
     const completed = !current.completed;
     todos = todos.map((t) => (t.id === id ? { ...t, completed, updatedAt: Date.now() } : t));
     stack.push(makeUpdateCommand(id, { completed: current.completed }, { completed }));
+  } else if (target.classList.contains("todo-today-pin")) {
+    // 三态翻转：在今日（手动或自动）→ 移出；不在 → 加入（DECISIONS.md D12）
+    const next = !isTodayMember(current, todayISO());
+    todos = todos.map((t) => (t.id === id ? { ...t, today: next, updatedAt: Date.now() } : t));
+    stack.push(makeUpdateCommand(id, { today: current.today ?? null }, { today: next }));
   } else if (target.classList.contains("todo-delete")) {
     if (isDeleted(current)) return;
     todos = todos.map((t) => (t.id === id ? markDeleted(t) : t));
@@ -326,7 +350,7 @@ listEl.addEventListener("click", (e) => {
 });
 
 // 行内控件（分类 select / 日期 input）：change 才写数据并落盘；渲染时直接赋 .value 不触发事件，无回写死循环
-listEl.addEventListener("change", (e) => {
+listArea.addEventListener("change", (e) => {
   const target = e.target as HTMLSelectElement | HTMLInputElement;
   const item = target.closest<HTMLElement>(".todo-item");
   if (!item) return;
@@ -410,12 +434,14 @@ document.addEventListener("keydown", (e) => {
 interface DragState {
   id: string;
   placeholder: HTMLLIElement;
-  /** 占位符当前插入位（可见列表剔除被拖项后的索引） */
+  /** 占位符当前插入位（所在分组剔除被拖项后的索引） */
   lastIndex: number;
   /** 拖起时的原始位置（Esc 取消 / 原位判定用） */
   originalIndex: number;
   pointerY: number;
   raf: number;
+  /** 被拖项所属分组 UL：拖拽按组隔离（DECISIONS.md D15） */
+  homeList: HTMLElement;
 }
 
 let drag: DragState | null = null;
@@ -424,7 +450,14 @@ let drag: DragState | null = null;
 const EDGE_SCROLL_ZONE = 48;
 const EDGE_SCROLL_SPEED = 12;
 
-listEl.addEventListener("dragstart", (e) => {
+/** 被拖项所在分组的可见列表（今天 tab：过期组/正常组；全部 tab：全量可见） */
+function dragSectionList(item: HTMLElement): Todo[] {
+  if (view.tab !== "today") return applyFilter(sortTodos(todos), view);
+  const { overdue, rest } = splitTodayOverdue(todayMembers(todos, todayISO()), todayISO());
+  return sortTodos(item.parentElement === overdueListEl ? overdue : rest);
+}
+
+listArea.addEventListener("dragstart", (e) => {
   const dragEvent = e as DragEvent;
   // 触摸长按流程已接管（或正在拖拽）：禁用原生拖拽避免双轨（安卓 Chrome 支持原生 DnD）
   if (drag || touchPending) {
@@ -443,9 +476,9 @@ listEl.addEventListener("dragstart", (e) => {
   }
   const item = target.closest<HTMLElement>(".todo-item");
   const id = item?.dataset.id;
-  if (!item || !id) return;
-  const visible = applyFilter(sortTodos(todos), view);
-  if (visible.length < 2) return; // 无可移动空间，不起拖
+  if (!item || !id || !item.parentElement) return;
+  const visible = dragSectionList(item);
+  if (visible.length < 2) return; // 组内无可移动空间，不起拖
   const originalIndex = visible.findIndex((t) => t.id === id);
   if (originalIndex < 0) return;
 
@@ -459,29 +492,37 @@ listEl.addEventListener("dragstart", (e) => {
   placeholder.style.height = `${item.offsetHeight}px`;
   item.before(placeholder); // 初始占位 = 原位
 
-  drag = { id, placeholder, lastIndex: originalIndex, originalIndex, pointerY: dragEvent.clientY, raf: 0 };
+  drag = {
+    id,
+    placeholder,
+    lastIndex: originalIndex,
+    originalIndex,
+    pointerY: dragEvent.clientY,
+    raf: 0,
+    homeList: item.parentElement,
+  };
   startAutoScroll();
 });
 
-listEl.addEventListener("dragover", (e) => {
+listArea.addEventListener("dragover", (e) => {
   const dragEvent = e as DragEvent;
   if (!drag) return;
   dragEvent.preventDefault(); // 允许放置
   if (dragEvent.dataTransfer) dragEvent.dataTransfer.dropEffect = "move";
   drag.pointerY = dragEvent.clientY;
-  const index = insertionIndex();
-  if (index !== drag.lastIndex) movePlaceholder(index);
+  const index = insertionIndex(drag.homeList);
+  if (index !== drag.lastIndex) movePlaceholder(index, drag.homeList);
 });
 
 // drop 的提交统一在 dragend 里做（dragend 在 drop 后必触发，取消拖拽也会触发）
-listEl.addEventListener("drop", (e) => e.preventDefault());
+listArea.addEventListener("drop", (e) => e.preventDefault());
 
-listEl.addEventListener("dragend", () => finishDrag());
+listArea.addEventListener("dragend", () => finishDrag());
 
-/** 计算占位符应处的插入位：指针 Y 与各项几何中点比较（剔除被拖项） */
-function insertionIndex(): number {
+/** 计算占位符应处的插入位：指针 Y 与各项几何中点比较（剔除被拖项；仅在本组内） */
+function insertionIndex(scope: HTMLElement): number {
   if (!drag) return 0;
-  const items = [...listEl.querySelectorAll<HTMLElement>(".todo-item:not(.dragging)")];
+  const items = [...scope.querySelectorAll<HTMLElement>(".todo-item:not(.dragging)")];
   for (let i = 0; i < items.length; i++) {
     const rect = items[i].getBoundingClientRect();
     if (drag.pointerY < rect.top + rect.height / 2) return i;
@@ -490,24 +531,28 @@ function insertionIndex(): number {
 }
 
 /** 只移动占位节点（不重渲染）；位次未变时调用方跳过，避免高频 dragover 重复操作 DOM */
-function movePlaceholder(index: number): void {
+function movePlaceholder(index: number, scope: HTMLElement): void {
   if (!drag) return;
-  const items = [...listEl.querySelectorAll<HTMLElement>(".todo-item:not(.dragging)")];
+  const items = [...scope.querySelectorAll<HTMLElement>(".todo-item:not(.dragging)")];
   drag.lastIndex = index;
-  if (index >= items.length) listEl.append(drag.placeholder);
+  if (index >= items.length) scope.append(drag.placeholder);
   else items[index].before(drag.placeholder);
 }
 
 /** 收尾：清理占位与浮起样式；占位位置 ≠ 原位则一次性提交 reorder 命令 */
 function finishDrag(): void {
   if (!drag) return;
-  const { id, placeholder, lastIndex } = drag;
+  const { id, placeholder, lastIndex, homeList } = drag;
   cancelAnimationFrame(drag.raf);
   placeholder.remove();
-  listEl.querySelector<HTMLElement>(".todo-item.dragging")?.classList.remove("dragging");
+  listArea.querySelector<HTMLElement>(".todo-item.dragging")?.classList.remove("dragging");
   drag = null;
 
-  const visible = applyFilter(sortTodos(todos), view);
+  // 邻居来源 = 所在分组的当前列表（planReorder 取中点数学与 Phase 1 一致，DECISIONS.md D15）
+  const visible =
+    view.tab === "today"
+      ? sortTodos(splitTodayOverdue(todayMembers(todos, todayISO()), todayISO())[homeList === overdueListEl ? "overdue" : "rest"])
+      : applyFilter(sortTodos(todos), view);
   const currentIndex = visible.findIndex((t) => t.id === id);
   if (currentIndex < 0 || lastIndex === currentIndex) return; // 原位放下：无命令无渲染
   const plan = planReorder(todos, id, lastIndex, visible);
@@ -526,8 +571,8 @@ function startAutoScroll(): void {
     else if (drag.pointerY > window.innerHeight - EDGE_SCROLL_ZONE) {
       window.scrollBy(0, EDGE_SCROLL_SPEED);
     }
-    const index = insertionIndex();
-    if (index !== drag.lastIndex) movePlaceholder(index);
+    const index = insertionIndex(drag.homeList);
+    if (index !== drag.lastIndex) movePlaceholder(index, drag.homeList);
     drag.raf = requestAnimationFrame(step);
   };
   drag.raf = requestAnimationFrame(step);
@@ -536,7 +581,7 @@ function startAutoScroll(): void {
 // Esc 取消拖拽：占位复位到原位后正常收尾（原位判定 ⇒ 不产生命令）
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !drag) return;
-  movePlaceholder(drag.originalIndex);
+  movePlaceholder(drag.originalIndex, drag.homeList);
   finishDrag();
 });
 
@@ -557,7 +602,7 @@ interface TouchPending {
 
 let touchPending: TouchPending | null = null;
 
-listEl.addEventListener(
+listArea.addEventListener(
   "touchstart",
   (e) => {
     if (drag) return;
@@ -565,8 +610,8 @@ listEl.addEventListener(
     if (target.closest("select, input, button")) return; // 控件交互优先，永不激活拖拽
     const item = target.closest<HTMLElement>(".todo-item");
     const id = item?.dataset.id;
-    if (!item || !id) return;
-    const visible = applyFilter(sortTodos(todos), view);
+    if (!item || !id || !item.parentElement) return;
+    const visible = dragSectionList(item);
     if (visible.length < 2) return;
     const originalIndex = visible.findIndex((t) => t.id === id);
     if (originalIndex < 0) return;
@@ -589,17 +634,25 @@ function beginTouchDrag(
   clientY: number,
 ): void {
   touchPending = null;
-  if (drag) return;
+  if (drag || !item.parentElement) return;
   item.classList.add("dragging");
   const placeholder = document.createElement("li");
   placeholder.className = "drag-placeholder";
   placeholder.style.height = `${item.offsetHeight}px`;
   item.before(placeholder);
-  drag = { id, placeholder, lastIndex: originalIndex, originalIndex, pointerY: clientY, raf: 0 };
+  drag = {
+    id,
+    placeholder,
+    lastIndex: originalIndex,
+    originalIndex,
+    pointerY: clientY,
+    raf: 0,
+    homeList: item.parentElement,
+  };
   startAutoScroll();
 }
 
-listEl.addEventListener(
+listArea.addEventListener(
   "touchmove",
   (e) => {
     const touch = e.touches[0];
@@ -617,8 +670,8 @@ listEl.addEventListener(
     }
     e.preventDefault(); // 拖拽中阻止页面滚动（本监听为非 passive）
     if (touch) drag.pointerY = touch.clientY;
-    const index = insertionIndex();
-    if (index !== drag.lastIndex) movePlaceholder(index);
+    const index = insertionIndex(drag.homeList);
+    if (index !== drag.lastIndex) movePlaceholder(index, drag.homeList);
   },
   { passive: false },
 );
@@ -631,8 +684,17 @@ function endTouchDrag(): void {
   if (drag) finishDrag();
 }
 
-listEl.addEventListener("touchend", endTouchDrag);
-listEl.addEventListener("touchcancel", endTouchDrag);
+listArea.addEventListener("touchend", endTouchDrag);
+listArea.addEventListener("touchcancel", endTouchDrag);
+
+// ---------- 过期置顶折叠组 ----------
+
+let overdueOpen = true;
+overdueToggle.addEventListener("click", () => {
+  overdueOpen = !overdueOpen;
+  overdueBox.classList.toggle("is-collapsed", !overdueOpen);
+  overdueToggle.setAttribute("aria-expanded", String(overdueOpen));
+});
 
 // ---------- 视图 tab（今天/全部） ----------
 

@@ -954,6 +954,95 @@ body {
   opacity: 0.55;
 }
 
+/* ============================================================
+   今天的工作台：过期置顶折叠组 + 今天 pin
+   ============================================================ */
+
+.overdue-box {
+  margin-top: 6px;
+}
+
+.overdue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.overdue-toggle:hover {
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.overdue-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.overdue-arrow {
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.overdue-box.is-collapsed .overdue-arrow {
+  transform: rotate(-90deg);
+}
+
+.overdue-box.is-collapsed .overdue-list {
+  display: none;
+}
+
+.overdue-list {
+  margin-top: 4px;
+}
+
+/* 过期组红字 */
+.overdue-list .todo-text {
+  color: var(--danger-text);
+}
+
+/* 「今天」pin：实心=在今日 */
+.todo-today-pin {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.todo-today-pin:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.todo-today-pin:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.todo-today-pin.is-active {
+  color: var(--accent);
+}
+
 .todo-footer {
   display: flex;
   justify-content: space-between;
