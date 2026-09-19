@@ -13,6 +13,8 @@ export interface Todo {
   dueDate?: string;
   /** 过期通知已发送：设备本地 UX 状态；随数据同步但标记时不 bump updatedAt（不参与 LWW） */
   notified?: boolean;
+  /** 手动排序序号（升序 = 界面自上而下）：旧数据缺失时显示按 createdAt 稳定推导，首次拖拽才物化 */
+  order?: number;
 }
 
 const STORAGE_KEY = "my-tobo.todos";
@@ -27,6 +29,11 @@ const MIGRATION_KEY_CATEGORY_DUE_DATE = "my-tobo.migrated.category_due_date";
 
 export function isDeleted(todo: Todo): boolean {
   return todo.deletedAt != null;
+}
+
+/** order 清洗：仅接受安全整数；非整数 / NaN / ±Infinity / 越界一律视为缺失（走 createdAt 推导分支） */
+export function normalizeOrder(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
 }
 
 /** 分类清洗：trim 后非空、≤20 字符、无禁用字符才合法；否则视为未填写 */
@@ -84,7 +91,7 @@ export function loadTodos(): Todo[] {
   }
 }
 
-/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/notified，读取时补齐；新字段非法值按未填写处理，条目保留 */
+/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/notified/order，读取时补齐；新字段非法值按未填写处理，条目保留 */
 function migrate(item: Todo): Todo {
   return {
     ...item,
@@ -93,6 +100,7 @@ function migrate(item: Todo): Todo {
     category: normalizeCategory(item.category),
     dueDate: isValidDueDate(item.dueDate) ? item.dueDate : undefined,
     notified: typeof item.notified === "boolean" ? item.notified : false,
+    order: normalizeOrder(item.order),
   };
 }
 

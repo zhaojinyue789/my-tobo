@@ -1,4 +1,4 @@
-import { isValidDueDate, loadTodos, mergeTodos, normalizeCategory, purgeTombstones, saveTodos, sameTodos, type Todo } from "./todo";
+import { isValidDueDate, loadTodos, mergeTodos, normalizeCategory, normalizeOrder, purgeTombstones, saveTodos, sameTodos, type Todo } from "./todo";
 
 export interface SyncConfig {
   gistId: string;
@@ -314,6 +314,7 @@ function sanitizeRemoteTodo(item: unknown): Todo | null {
     category: normalizeCategory(t.category),
     dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
     notified: typeof t.notified === "boolean" ? t.notified : undefined,
+    order: normalizeOrder(t.order),
   };
 }
 

@@ -240,6 +240,7 @@ listEl.addEventListener("click", (e) => {
   const item = target.closest<HTMLElement>(".todo-item");
   if (!item) return;
   const id = item.dataset.id;
+  if (id === undefined) return;
   const current = todos.find((t) => t.id === id);
   if (!current) return;
   if (target.classList.contains("todo-toggle")) {
