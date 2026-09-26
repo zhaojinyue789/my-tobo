@@ -3,6 +3,7 @@ import {
   isValidDueDate,
   isValidDueTime,
   normalizeCategory,
+  NOTES_MAX_LENGTH,
   orderBetween,
   withOrder,
 } from "./todo";
@@ -67,6 +68,22 @@ export function setupListInteractions(
       else app.selectedIds.add(id);
       deps.render();
       return;
+    } else if (
+      target.classList.contains("todo-notes") ||
+      target.classList.contains("todo-notes-add")
+    ) {
+      beginNotesEdit(item, id);
+      return;
+    } else if (target.classList.contains("todo-sub-add")) {
+      beginSubAdd(item, id);
+      return;
+    } else if (target.classList.contains("sub-del")) {
+      const subId = target.closest<HTMLElement>(".todo-subtask")?.dataset.subId;
+      if (!id || !subId) return;
+      const current = app.todos.find((t) => t.id === id);
+      if (!current?.subtasks) return;
+      const next = current.subtasks.filter((s) => s.id !== subId);
+      updateTodo(id, { subtasks: next.length > 0 ? next : undefined });
     } else {
       return;
     }
@@ -119,7 +136,113 @@ export function setupListInteractions(
     input.addEventListener("blur", () => endEdit(true));
   }
 
-  // 行内控件（分类 select / 日期 input）：change 才写数据并落盘；渲染时直接赋 .value 不触发事件，无回写死循环
+  // ---------- 行内备注编辑 ----------
+
+  /** 单击备注预览或「＋备注」进入编辑：换成 textarea；Ctrl/Cmd+Enter 或失焦提交，Esc 取消。
+   *  复用 editingId 守卫防止编辑中列表重建；提交不整表重渲染（备注不影响顺序/统计）。 */
+  function beginNotesEdit(item: HTMLElement, id: string | undefined): void {
+    if (app.editingId != null || !id) return;
+    const todo = app.todos.find((t) => t.id === id);
+    if (!todo) return;
+    const anchor =
+      item.querySelector<HTMLElement>(".todo-notes") ??
+      item.querySelector<HTMLElement>(".todo-notes-add");
+    if (!anchor) return;
+    app.editingId = id;
+    const ta = document.createElement("textarea");
+    ta.className = "todo-notes-edit";
+    ta.maxLength = NOTES_MAX_LENGTH;
+    ta.rows = 3;
+    ta.placeholder = "输入备注，Ctrl+Enter 保存，Esc 取消";
+    ta.setAttribute("aria-label", "编辑备注");
+    ta.value = todo.notes ?? "";
+    anchor.replaceWith(ta);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    let done = false;
+    const endEdit = (save: boolean): void => {
+      if (done || app.editingId !== id) return;
+      done = true;
+      app.editingId = null;
+      const next = ta.value.trim();
+      const live = app.todos.find((t) => t.id === id);
+      if (save && live && !isDeleted(live) && next !== (live.notes ?? "")) {
+        updateTodo(id, { notes: next || undefined }); // 清空 = 删除备注
+        saveOnly();
+      }
+      // 原地还原：有备注显示预览，无备注显示「＋备注」
+      const latest = app.todos.find((t) => t.id === id);
+      if (latest?.notes) {
+        const span = document.createElement("span");
+        span.className = "todo-notes";
+        span.textContent = latest.notes;
+        span.title = "点击编辑备注";
+        ta.replaceWith(span);
+      } else {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "todo-notes-add";
+        btn.textContent = "＋备注";
+        ta.replaceWith(btn);
+      }
+    };
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        endEdit(true); // 直接提交，不依赖 blur（与文本编辑同因）
+      } else if (e.key === "Escape") {
+        e.stopPropagation(); // 不触发全局 Esc（只关筛选菜单）的语义混叠
+        endEdit(false);
+      }
+    });
+    ta.addEventListener("blur", () => endEdit(true));
+  }
+
+  // ---------- 子任务 ----------
+
+  /** 点「＋子任务」：按钮换成输入框（有子任务的条目自带常驻输入框，不走这里） */
+  function beginSubAdd(item: HTMLElement, id: string | undefined): void {
+    if (!id || app.editingId != null) return;
+    const btn = item.querySelector<HTMLElement>(".todo-sub-add");
+    if (!btn || item.querySelector(".sub-add")) return;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "sub-add";
+    input.maxLength = 200;
+    input.placeholder = "添加子任务，回车确认";
+    input.setAttribute("aria-label", "添加子任务");
+    btn.replaceWith(input);
+    input.focus();
+  }
+
+  // 子任务输入框：Enter 追加一条（支持连续录入），Esc 还原
+  listEl.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains("sub-add")) return;
+    if (e.key !== "Enter" && e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const item = target.closest<HTMLElement>(".todo-item");
+    const id = item?.dataset.id;
+    if (e.key === "Escape" || !id) {
+      deps.render(); // 重建列表即还原为初始形态
+      return;
+    }
+    const text = (target as HTMLInputElement).value.trim();
+    if (!text) return;
+    const current = app.todos.find((t) => t.id === id);
+    if (!current) return;
+    const next = [...(current.subtasks ?? []), { id: crypto.randomUUID(), text, done: false }];
+    updateTodo(id, { subtasks: next });
+    persist();
+    // 重渲染后把焦点还给该条目的子任务输入框，连续录入不丢焦点
+    setTimeout(() => {
+      const li = listEl.querySelector<HTMLElement>(`.todo-item[data-id="${CSS.escape(id)}"]`);
+      li?.querySelector<HTMLInputElement>(".sub-add")?.focus();
+    }, 0);
+  });
+
+  // 行内控件（分类 select / 日期 input / 子任务勾选）：change 才写数据并落盘；渲染时直接赋 .value 不触发事件，无回写死循环
   listEl.addEventListener("change", (e) => {
     const target = e.target as HTMLSelectElement | HTMLInputElement;
     const item = target.closest<HTMLElement>(".todo-item");
@@ -128,7 +251,14 @@ export function setupListInteractions(
     if (!current) return;
     let updated: Todo | undefined;
 
-    if (target.classList.contains("todo-category")) {
+    if (target.classList.contains("sub-check")) {
+      const subId = target.closest<HTMLElement>(".todo-subtask")?.dataset.subId;
+      if (!subId || !current.subtasks) return;
+      const done = (target as HTMLInputElement).checked;
+      updated = updateTodo(current.id, {
+        subtasks: current.subtasks.map((s) => (s.id === subId ? { ...s, done } : s)),
+      });
+    } else if (target.classList.contains("todo-category")) {
       const next = target.value === "__uncat__" ? undefined : normalizeCategory(target.value);
       if ((current.category ?? undefined) === (next ?? undefined)) return;
       updated = updateTodo(current.id, { category: next });

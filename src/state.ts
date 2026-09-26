@@ -81,12 +81,14 @@ export function saveOnly(): void {
   services.onLocalChange();
 }
 
-/** 当前视图可见条目：视图过滤 + 文本搜索（拖动/键盘排序/批量共用同一份可见集） */
+/** 当前视图可见条目：视图过滤 + 文本/备注搜索（拖动/键盘排序/批量共用同一份可见集） */
 export function visibleTodos(): Todo[] {
   const list = applyFilter(app.todos, app.view);
   const term = app.searchTerm.trim().toLowerCase();
   if (!term) return list;
-  return list.filter((t) => t.text.toLowerCase().includes(term));
+  return list.filter(
+    (t) => t.text.toLowerCase().includes(term) || (t.notes ?? "").toLowerCase().includes(term),
+  );
 }
 
 /**

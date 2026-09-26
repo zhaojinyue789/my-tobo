@@ -763,6 +763,7 @@ body {
 
 .todo-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 10px 8px;
@@ -885,6 +886,179 @@ body.is-reordering .todo-item:not(.is-dragging) {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+/* ============================================================
+   备注与子任务：第二行附加区（flex-basis 100% 独占一行）
+   ============================================================ */
+
+.todo-extras {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 0 30px;
+}
+
+/* 备注预览：多行折叠为最多两行，点击进入编辑 */
+.todo-notes {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* 备注编辑框 */
+.todo-notes-edit {
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--card);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-control);
+  outline: none;
+  box-shadow: var(--ring);
+  resize: vertical;
+  min-height: 60px;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 「＋备注 / ＋子任务」幽灵入口：平时半透明，hover 行内显现 */
+.todo-notes-add,
+.todo-sub-add {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.todo-item:hover .todo-notes-add,
+.todo-item:hover .todo-sub-add,
+.todo-notes-add:focus-visible,
+.todo-sub-add:focus-visible {
+  opacity: 1;
+}
+
+.todo-notes-add:hover,
+.todo-sub-add:hover {
+  color: var(--accent);
+}
+
+/* 子任务进度小胶囊 */
+.todo-subchip {
+  align-self: flex-start;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--field);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.todo-subchip.is-all-done {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+/* 子任务清单 */
+.todo-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.todo-subtask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.todo-subtask .sub-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.todo-subtask.is-done .sub-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.todo-subtask .sub-check {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.sub-del {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.todo-subtask:hover .sub-del,
+.sub-del:focus-visible {
+  opacity: 1;
+}
+
+.sub-del:hover {
+  color: var(--danger-text);
+}
+
+/* 子任务添加输入框 */
+.sub-add {
+  align-self: flex-start;
+  width: 100%;
+  max-width: 360px;
+  height: 26px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.sub-add:focus {
+  background: var(--card);
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .todo-category {

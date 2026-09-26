@@ -29,7 +29,7 @@ export function setupBackup(
 ): void {
   exportBtn.addEventListener("click", () => {
     const payload = {
-      version: 4,
+      version: 5,
       exportedAt: new Date().toISOString(),
       todos: app.todos, // 含墓碑：备份保真，导入端按 LWW 合并
     };

@@ -334,10 +334,17 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
     throw new Error("远端 Gist 内容不是合法 JSON（可能被手动修改），本次合并已中止");
   }
   const { version } = (data ?? {}) as { version?: unknown };
-  // 版本契约：无 version 的历史 payload 与已知版本（v1–v4，须与 gistPayload 同步）照常解析；
+  // 版本契约：无 version 的历史 payload 与已知版本（v1–v5，须与 gistPayload 同步）照常解析；
   // 未来/未知版本号只警告不拒绝，唯一整批放弃条件是 todos 非数组。
-  if (version !== undefined && version !== 1 && version !== 2 && version !== 3 && version !== 4) {
-    console.warn("[my-tobo] 远端数据版本号未识别（本机支持 v1–v4），仍尝试解析 todos：", version);
+  if (
+    version !== undefined &&
+    version !== 1 &&
+    version !== 2 &&
+    version !== 3 &&
+    version !== 4 &&
+    version !== 5
+  ) {
+    console.warn("[my-tobo] 远端数据版本号未识别（本机支持 v1–v5），仍尝试解析 todos：", version);
   }
   const todos = (data as { todos?: unknown })?.todos;
   if (!Array.isArray(todos)) return [];
@@ -352,7 +359,8 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
 }
 
 function gistPayload(todos: Todo[]): string {
-  return JSON.stringify({ version: 4, todos: purgeTombstones(todos) });
+  // v5：新增 notes / subtasks 字段（增量变更，旧版字段契约不受影响）
+  return JSON.stringify({ version: 5, todos: purgeTombstones(todos) });
 }
 
 interface SyncHooks {

@@ -1,3 +1,9 @@
+export interface Subtask {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 export interface Todo {
   id: string;
   text: string;
@@ -19,6 +25,10 @@ export interface Todo {
   pinned?: boolean;
   /** 排序权重：越小越靠前。新条目取现存最小值减 1，拖动取前后邻条中点；随 updatedAt 走 LWW */
   order?: number;
+  /** 备注：多行文本（≤500 字符），空视为未填写 */
+  notes?: string;
+  /** 子任务清单：整组字段随 LWW 同步（组内不做行级合并） */
+  subtasks?: Subtask[];
   /** 过期/到点通知已发送：设备本地 UX 状态；随数据同步但标记时不 bump updatedAt（不参与 LWW） */
   notified?: boolean;
   /** 「提前 1 天」提醒已发送（同 notified，独立标记） */
@@ -40,6 +50,10 @@ const TOMBSTONE_TTL = 30 * 24 * 60 * 60 * 1000;
 const CATEGORY_MAX_LENGTH = 20;
 /** 分类名禁用字符：/ \ < > : " | ? * 及控制字符（U+0000–U+001F、U+007F） */
 const CATEGORY_FORBIDDEN = /[/\\<>:"|?*\u0000-\u001f\u007f]/;
+/** 备注长度上限（保存时静默截断） */
+export const NOTES_MAX_LENGTH = 500;
+/** 单条子任务文本长度上限 */
+export const SUBTASK_MAX_LENGTH = 200;
 /** 一次性迁移标记：category/dueDate 字段引入后，首次加载把迁移结果写回存储并置位，之后不再触发写回 */
 const MIGRATION_KEY_CATEGORY_DUE_DATE = "my-tobo.migrated.category_due_date";
 /** 一次性迁移标记：order 排序字段引入后，首次加载把补齐结果写回存储并置位 */
@@ -206,6 +220,27 @@ function compareDisplay(a: Todo, b: Todo): number {
   return b.createdAt - a.createdAt;
 }
 
+/** 备注清洗：trim 后非空才保留，超长静默截断 */
+export function cleanNotes(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, NOTES_MAX_LENGTH);
+}
+
+/** 子任务清洗：逐条白名单重建（id/text/done），空白文本丢弃，空清单视为未填写 */
+export function cleanSubtasks(value: unknown): Subtask[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: Subtask[] = [];
+  for (const s of value) {
+    if (typeof s !== "object" || s === null) continue;
+    const { id, text, done } = s as Partial<Subtask>;
+    if (typeof id !== "string" || id === "" || typeof text !== "string" || !text.trim()) continue;
+    out.push({ id, text: text.trim().slice(0, SUBTASK_MAX_LENGTH), done: done === true });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 /**
  * 字段白名单重建 + 非法值清洗：本地 migrate 与远端 sanitizeRemoteTodo 共用的唯一清洗实现。
  * 只保留模型声明字段，未知字段一律丢弃（防止脏字段随同步永久传播）；
@@ -226,6 +261,8 @@ export function cleanTodoFields(t: Todo): Todo {
     recurrence: isRecurrence(t.recurrence) ? t.recurrence : undefined,
     pinned: t.pinned === true ? true : undefined,
     order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
+    notes: cleanNotes(t.notes),
+    subtasks: cleanSubtasks(t.subtasks),
     notified: typeof t.notified === "boolean" ? t.notified : undefined,
     reminded: typeof t.reminded === "boolean" ? t.reminded : undefined,
   };

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceDate,
+  cleanNotes,
+  cleanSubtasks,
   cleanTodoFields,
   createTodo,
   isDeleted,
@@ -14,9 +16,11 @@ import {
   markDeleted,
   mergeTodos,
   normalizeCategory,
+  NOTES_MAX_LENGTH,
   orderBetween,
   purgeTombstones,
   sameTodos,
+  SUBTASK_MAX_LENGTH,
   topOrder,
   withOrder,
   type Todo,
@@ -179,6 +183,41 @@ describe("cleanTodoFields（白名单清洗）", () => {
       reminded: true,
       deletedAt: 99,
     });
+  });
+});
+
+describe("cleanNotes / cleanSubtasks（备注与子任务清洗）", () => {
+  it("备注 trim、空值清空、超长截断", () => {
+    expect(cleanNotes("  第一行\n第二行  ")).toBe("第一行\n第二行");
+    expect(cleanNotes("   ")).toBeUndefined();
+    expect(cleanNotes(42 as unknown as string)).toBeUndefined();
+    expect(cleanNotes("a".repeat(NOTES_MAX_LENGTH + 10))).toHaveLength(NOTES_MAX_LENGTH);
+  });
+  it("子任务逐条清洗：无效条目丢弃，文本截断，done 归一化", () => {
+    const out = cleanSubtasks([
+      { id: "s1", text: "  购买食材  ", done: true, extra: "x" },
+      { id: "", text: "无id丢弃" },
+      { id: "s3", text: 42 as unknown as string },
+      null,
+      "junk",
+    ]);
+    expect(out).toEqual([{ id: "s1", text: "购买食材", done: true }]);
+  });
+  it("子任务空清单/非数组视为未填写", () => {
+    expect(cleanSubtasks([])).toBeUndefined();
+    expect(cleanSubtasks("x" as unknown as unknown[])).toBeUndefined();
+    expect(cleanSubtasks([{ id: "a", text: "b".repeat(SUBTASK_MAX_LENGTH + 5), done: false }])).toEqual([
+      { id: "a", text: "b".repeat(SUBTASK_MAX_LENGTH), done: false },
+    ]);
+  });
+  it("cleanTodoFields 贯穿清洗 notes/subtasks", () => {
+    const out = cleanTodoFields({
+      ...t(),
+      notes: "  hi  ",
+      subtasks: [{ id: "s", text: "子任务", done: false }],
+    } as Todo);
+    expect(out.notes).toBe("hi");
+    expect(out.subtasks).toEqual([{ id: "s", text: "子任务", done: false }]);
   });
 });
 

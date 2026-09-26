@@ -402,7 +402,82 @@ export function renderList(
     del.textContent = "✕";
 
     li.append(label, meta, pin, del);
+
+    // 备注与子任务：第二行附加区（批量/回收站视图不渲染，保持行紧凑）
+    if (!opts.batch) {
+      const extras = buildExtras(todo);
+      if (extras) li.append(extras);
+    }
+
     fragment.append(li);
   }
   listEl.replaceChildren(fragment);
+}
+
+/** 备注与子任务附加区：无备注无子任务时仍给出「＋备注 / ＋子任务」入口（hover 显现） */
+function buildExtras(todo: Todo): HTMLElement | null {
+  const extras = document.createElement("div");
+  extras.className = "todo-extras";
+
+  if (todo.notes) {
+    const notes = document.createElement("span");
+    notes.className = "todo-notes";
+    notes.textContent = todo.notes;
+    notes.title = "点击编辑备注";
+    extras.append(notes);
+  } else {
+    const addNotes = document.createElement("button");
+    addNotes.type = "button";
+    addNotes.className = "todo-notes-add";
+    addNotes.textContent = "＋备注";
+    extras.append(addNotes);
+  }
+
+  if (todo.subtasks) {
+    const doneCount = todo.subtasks.filter((s) => s.done).length;
+    const chip = document.createElement("span");
+    chip.className = "todo-subchip" + (doneCount === todo.subtasks.length ? " is-all-done" : "");
+    chip.textContent = `${doneCount}/${todo.subtasks.length}`;
+    chip.title = "子任务完成进度";
+    extras.append(chip);
+
+    const subList = document.createElement("div");
+    subList.className = "todo-subtasks";
+    for (const s of todo.subtasks) {
+      const row = document.createElement("div");
+      row.className = "todo-subtask" + (s.done ? " is-done" : "");
+      row.dataset.subId = s.id;
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "sub-check";
+      check.checked = s.done;
+      check.setAttribute("aria-label", `子任务：${s.text}`);
+      const txt = document.createElement("span");
+      txt.className = "sub-text";
+      txt.textContent = s.text;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "sub-del";
+      del.setAttribute("aria-label", `删除子任务：${s.text}`);
+      del.textContent = "✕";
+      row.append(check, txt, del);
+      subList.append(row);
+    }
+    const addInput = document.createElement("input");
+    addInput.type = "text";
+    addInput.className = "sub-add";
+    addInput.placeholder = "添加子任务，回车确认";
+    addInput.maxLength = 200;
+    addInput.setAttribute("aria-label", "添加子任务");
+    subList.append(addInput);
+    extras.append(subList);
+  } else {
+    const addSub = document.createElement("button");
+    addSub.type = "button";
+    addSub.className = "todo-sub-add";
+    addSub.textContent = "＋子任务";
+    extras.append(addSub);
+  }
+
+  return extras;
 }
