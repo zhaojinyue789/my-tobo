@@ -5,6 +5,7 @@ import {
   cleanSubtasks,
   cleanTodoFields,
   createTodo,
+  daysBetween,
   isDeleted,
   isDueSoon,
   isDueToday,
@@ -264,6 +265,13 @@ describe("advanceDate / isDueTomorrow（重复与提前提醒）", () => {
     expect(advanceDate("2026-01-31", "monthly")).toBe("2026-02-28");
     expect(advanceDate("2024-01-31", "monthly")).toBe("2024-02-29"); // 闰年
     expect(advanceDate("2026-01-15", "monthly")).toBe("2026-02-15");
+  });
+  it("daysBetween 计算日历日差（跨月/跨年）", () => {
+    expect(daysBetween("2026-09-27", "2026-09-27")).toBe(0);
+    expect(daysBetween("2026-09-27", "2026-09-25")).toBe(2);
+    expect(daysBetween("2026-09-25", "2026-09-27")).toBe(-2);
+    expect(daysBetween("2026-10-01", "2026-09-27")).toBe(4);
+    expect(daysBetween("2027-01-01", "2026-12-31")).toBe(1);
   });
   it("isDueTomorrow 只认明天", () => {
     const t1 = { ...t(), dueDate: "2026-09-27" };

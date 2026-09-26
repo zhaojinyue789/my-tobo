@@ -123,6 +123,13 @@ export function dateOffset(from: string, days: number): string {
   return `${dt.getFullYear()}-${month}-${day}`;
 }
 
+/** 两个本地 ISO 日期的日历日差（a − b）；走 UTC 时间戳避免夏令时干扰 */
+export function daysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.round((Date.UTC(ay, am - 1, ad) - Date.UTC(by, bm - 1, bd)) / 86_400_000);
+}
+
 /** 重复实例的下一个截止日期：日 +1、周 +7、月 +1 个月（月末溢出收紧到当月最后一天） */
 export function advanceDate(dateISO: string, recurrence: Recurrence): string {
   const [y, m, d] = dateISO.split("-").map(Number);

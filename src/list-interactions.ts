@@ -271,6 +271,7 @@ export function setupListInteractions(
         dueTime: next ? current.dueTime : undefined,
       });
     } else if (target.classList.contains("todo-due-time")) {
+      target.classList.toggle("is-empty", !(target as HTMLInputElement).value); // 空值收成时钟图标
       const next = isValidDueTime(target.value) ? target.value : undefined;
       if ((current.dueTime ?? undefined) === (next ?? undefined)) return;
       updated = updateTodo(current.id, { dueTime: next });

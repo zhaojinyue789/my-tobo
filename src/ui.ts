@@ -1,4 +1,6 @@
 import {
+  dateOffset,
+  daysBetween,
   deletedRecently,
   isDeleted,
   isDueSoon,
@@ -294,6 +296,23 @@ export function syncFilterMenu(
         : "全部待办";
 }
 
+/**
+ * 日期状态的友好文案：已过期 N 天 / 今天 / 明天；其余日期由原生控件呈现，不另加标签。
+ * 已完成/已删除不显示。
+ */
+export function dueStatus(
+  t: Todo,
+  today: string = todayISO(),
+): { label: string; kind: "overdue" | "today" | "tomorrow" } | null {
+  if (!t.dueDate || t.completed || isDeleted(t)) return null;
+  if (t.dueDate < today) {
+    return { label: `已过期 ${daysBetween(today, t.dueDate)} 天`, kind: "overdue" };
+  }
+  if (t.dueDate === today) return { label: "今天", kind: "today" };
+  if (t.dueDate === dateOffset(today, 1)) return { label: "明天", kind: "tomorrow" };
+  return null;
+}
+
 /** 单条待办的分类下拉：未分类 + 全部现有分类；存量脏值防御性兜底显示 */
 function buildCategorySelect(todo: Todo, categories: string[]): HTMLSelectElement {
   const select = document.createElement("select");
@@ -383,7 +402,7 @@ export function renderList(
 
     const categorySelect = buildCategorySelect(todo, categories);
 
-    // 截止时刻：仅设置了截止日期时出现（时刻依赖日期才有意义）
+    // 截止时刻：仅设置了截止日期时出现（时刻依赖日期才有意义）；空值收成时钟图标
     let timeInput: HTMLInputElement | null = null;
     if (todo.dueDate) {
       timeInput = document.createElement("input");
@@ -391,6 +410,7 @@ export function renderList(
       timeInput.className = "todo-due-time";
       timeInput.setAttribute("aria-label", "截止时刻");
       timeInput.value = todo.dueTime ?? "";
+      if (!todo.dueTime) timeInput.classList.add("is-empty");
     }
 
     const dueInput = document.createElement("input");
@@ -413,6 +433,14 @@ export function renderList(
     meta.append(categorySelect);
     if (timeInput) meta.append(timeInput);
     meta.append(dueInput);
+    // 友好日期状态：已过期 N 天 / 今天 / 明天（其余日期原生控件已可读，不重复）
+    const status = dueStatus(todo);
+    if (status) {
+      const chip = document.createElement("span");
+      chip.className = `due-chip is-${status.kind}`;
+      chip.textContent = status.label;
+      meta.append(chip);
+    }
     if (todo.recurrence) {
       const repeat = document.createElement("span");
       repeat.className = "todo-repeat";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFilter, STATUS_LABEL, type View } from "./ui";
+import { applyFilter, dueStatus, STATUS_LABEL, type View } from "./ui";
 import type { Todo } from "./todo";
 
 const t = (over: Partial<Todo> = {}): Todo => ({
@@ -50,6 +50,27 @@ describe("applyFilter：智能视图（today/soon）", () => {
     for (const f of ["all", "active", "completed", "deleted", "today", "soon"] as const) {
       expect(STATUS_LABEL[f]).toBeTruthy();
     }
+  });
+});
+
+describe("dueStatus（友好日期状态）", () => {
+  const today = "2026-09-27";
+  it("过期显示天数，今天/明天单独标记，其余为 null", () => {
+    expect(dueStatus({ ...t(), dueDate: "2026-09-25" }, today)).toEqual({
+      label: "已过期 2 天",
+      kind: "overdue",
+    });
+    expect(dueStatus({ ...t(), dueDate: "2026-09-27" }, today)).toEqual({ label: "今天", kind: "today" });
+    expect(dueStatus({ ...t(), dueDate: "2026-09-28" }, today)).toEqual({
+      label: "明天",
+      kind: "tomorrow",
+    });
+    expect(dueStatus({ ...t(), dueDate: "2026-10-10" }, today)).toBeNull();
+  });
+  it("已完成/已删除/无日期不显示", () => {
+    expect(dueStatus({ ...t(), dueDate: "2026-09-25", completed: true }, today)).toBeNull();
+    expect(dueStatus({ ...t(), dueDate: "2026-09-25", deletedAt: 1 }, today)).toBeNull();
+    expect(dueStatus({ ...t() }, today)).toBeNull();
   });
 });
 

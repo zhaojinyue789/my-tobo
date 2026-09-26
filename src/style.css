@@ -421,6 +421,43 @@ body {
   padding: 0 8px;
 }
 
+/* 快捷日期按钮：与胶囊控件同族 */
+.quick-dates {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.quick-date-btn {
+  height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.quick-date-btn:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 表单时刻空值：收成时钟图标 */
+.new-todo-time.is-empty {
+  width: 36px;
+  padding: 0 6px;
+}
+
+.new-todo-time.is-empty::-webkit-datetime-edit {
+  color: transparent;
+}
+
 /* 新建表单的时刻与重复规则：与分类下拉同族的紧凑控件 */
 .new-todo-time {
   flex: none;
@@ -469,6 +506,7 @@ body {
 .todo-form-options {
   flex-basis: 100%; /* 独占一行（form 为 flex-wrap） */
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   max-height: 0;
@@ -1134,6 +1172,46 @@ body.is-reordering .todo-item:not(.is-dragging) {
 /* 聚焦编辑时展开宽度并显示字段，避免盲输 */
 .todo-due.is-empty:focus {
   width: 112px;
+}
+
+/* 时刻空值：同款收成时钟图标，聚焦展开 */
+.todo-due-time.is-empty {
+  width: 26px;
+  padding: 0 4px;
+}
+
+.todo-due-time.is-empty::-webkit-datetime-edit {
+  color: transparent;
+}
+
+.todo-due-time.is-empty:focus {
+  width: 86px;
+}
+
+/* 友好日期状态：已过期 / 今天 / 明天 */
+.due-chip {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.due-chip.is-overdue {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+.due-chip.is-today {
+  color: var(--warn-text);
+  background: var(--warn-soft);
+}
+
+.due-chip.is-tomorrow {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .todo-due.is-empty:hover::-webkit-datetime-edit,

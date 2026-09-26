@@ -1,9 +1,11 @@
 import {
   createTodo,
+  dateOffset,
   isValidDueDate,
   isValidDueTime,
   normalizeCategory,
   RECURRENCES,
+  todayISO,
   topOrder,
 } from "./todo";
 import { buildSelectOption, categoryOptions } from "./ui";
@@ -44,9 +46,12 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
   const newTodoTime = document.createElement("input");
   newTodoTime.type = "time";
   newTodoTime.id = "new-todo-time";
-  newTodoTime.className = "new-todo-time hidden";
+  newTodoTime.className = "new-todo-time hidden is-empty";
   newTodoTime.setAttribute("aria-label", "新待办的截止时刻");
   formOptions.append(newTodoTime);
+  newTodoTime.addEventListener("change", () => {
+    newTodoTime.classList.toggle("is-empty", !newTodoTime.value);
+  });
 
   // 新增表单的重复规则
   const newTodoRepeat = document.createElement("select");
@@ -60,6 +65,27 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
     ),
   );
   formOptions.append(newTodoRepeat);
+
+  // 快捷日期：一键填充常用截止日（今天 / 明天 / 一周后）
+  const quickDates = document.createElement("div");
+  quickDates.className = "quick-dates";
+  for (const [label, offset] of [
+    ["今天", 0],
+    ["明天", 1],
+    ["一周", 7],
+  ] as const) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "quick-date-btn";
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      newTodoDue.value = dateOffset(todayISO(), offset);
+      newTodoDue.classList.remove("is-empty");
+      newTodoTime.classList.remove("hidden"); // 时刻跟随日期出现
+    });
+    quickDates.append(btn);
+  }
+  formOptions.append(quickDates);
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
