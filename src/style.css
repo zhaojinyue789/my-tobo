@@ -801,9 +801,8 @@ body {
 
 .todo-item {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 8px;
   border-radius: 10px;
   transition: background-color 0.15s;
@@ -886,6 +885,13 @@ body.is-reordering .todo-item:not(.is-dragging) {
   border-color: var(--accent);
 }
 
+/* 第一行：主操作 + 文本 + 行动按钮（文本独占剩余宽度，不再被控件挤压换行） */
+.todo-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .todo-text {
   flex: 1;
   min-width: 0;
@@ -917,18 +923,14 @@ body.is-reordering .todo-item:not(.is-dragging) {
   user-select: text;
 }
 
-/* 行内元信息：分类下拉 + 截止日期 */
+/* 第二行：元信息控件（分类下拉 + 时刻 + 日期 + 状态），与文本左缘对齐 */
 .todo-meta {
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+  margin-left: 30px;
 }
-
-/* ============================================================
-   备注与子任务：第二行附加区（flex-basis 100% 独占一行）
-   ============================================================ */
 
 /* 分类色点：哈希取色，行内与筛选菜单共用 */
 .cat-dot {
@@ -938,12 +940,12 @@ body.is-reordering .todo-item:not(.is-dragging) {
   border-radius: 50%;
 }
 
+/* 第三行：备注与子任务附加区 */
 .todo-extras {
-  flex-basis: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 2px 0 0 30px;
+  margin: 0 0 0 30px;
 }
 
 /* 备注预览：多行折叠为最多两行，点击进入编辑 */
@@ -1361,7 +1363,7 @@ body.is-reordering .todo-item:not(.is-dragging) {
 
 .todo-empty {
   margin-top: 8px;
-  padding: 36px 16px;
+  padding: 40px 16px;
   font-size: 14px;
   color: var(--text-muted);
   text-align: center;
@@ -1369,8 +1371,44 @@ body.is-reordering .todo-item:not(.is-dragging) {
   border-radius: 12px;
 }
 
+/* 空状态：装饰图标 + 文案，竖排居中 */
+.todo-empty-icon {
+  display: block;
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 10px;
+  opacity: 0.9;
+}
+
+.todo-empty-text {
+  display: block;
+}
+
+/* 完成进度线：toolbar 下方 3px 细条 */
+.progress-line {
+  height: 3px;
+  margin-top: 12px;
+  background: var(--field);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-line.hidden {
+  display: none;
+}
+
+.progress-line-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), #22c55e);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
 .todo-footer {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   justify-content: space-between;
   align-items: center;
   margin-top: 16px;
@@ -1382,6 +1420,7 @@ body.is-reordering .todo-item:not(.is-dragging) {
 
 .todo-footer-actions {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
@@ -1397,6 +1436,7 @@ body.is-reordering .todo-item:not(.is-dragging) {
   border: none;
   border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
   transition: color 0.15s;
 }
 
@@ -1785,6 +1825,7 @@ body.is-reordering .todo-item:not(.is-dragging) {
   background: none;
   border: none;
   cursor: pointer;
+  white-space: nowrap;
   transition: color 0.15s;
 }
 

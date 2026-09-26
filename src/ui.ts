@@ -336,6 +336,8 @@ export interface RenderOptions {
   batch?: boolean;
   /** 批量模式已选 id 集合（渲染时勾选态以此为准） */
   selected?: Set<string>;
+  /** 空状态装饰图标（emoji） */
+  emptyIcon?: string;
 }
 
 export function renderList(
@@ -347,7 +349,18 @@ export function renderList(
 ): void {
   const empty = document.createElement("li");
   empty.className = "todo-empty";
-  empty.textContent = emptyMessage;
+  if (opts.emptyIcon) {
+    const icon = document.createElement("span");
+    icon.className = "todo-empty-icon";
+    icon.textContent = opts.emptyIcon;
+    icon.setAttribute("aria-hidden", "true");
+    const text = document.createElement("span");
+    text.className = "todo-empty-text";
+    text.textContent = emptyMessage;
+    empty.append(icon, text);
+  } else {
+    empty.textContent = emptyMessage;
+  }
 
   if (todos.length === 0) {
     listEl.replaceChildren(empty);
@@ -363,6 +376,11 @@ export function renderList(
       `${todo.pinned ? " is-pinned" : ""}${opts.deleted ? " is-deleted" : ""}`;
     li.dataset.id = todo.id;
 
+    // 两行布局：第一行 主操作+文本+行动按钮，第二行 元信息控件（分类/时刻/日期/状态），
+    // 第三行 备注/子任务——文本不再被控件挤压换行
+    const main = document.createElement("div");
+    main.className = "todo-main";
+
     if (opts.deleted) {
       const label = document.createElement("span");
       label.className = "todo-text";
@@ -374,7 +392,8 @@ export function renderList(
       restore.setAttribute("aria-label", "恢复");
       restore.textContent = "恢复";
 
-      li.append(label, restore);
+      main.append(label, restore);
+      li.append(main);
       fragment.append(li);
       continue;
     }
@@ -386,68 +405,20 @@ export function renderList(
       check.className = "todo-check";
       check.setAttribute("aria-label", `选择：${todo.text}`);
       check.checked = opts.selected?.has(todo.id) ?? false;
-      li.append(check);
+      main.append(check);
     } else {
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "todo-toggle";
       toggle.setAttribute("aria-label", todo.completed ? "标记为未完成" : "标记为已完成");
       toggle.textContent = "✓";
-      li.append(toggle);
+      main.append(toggle);
     }
 
     const label = document.createElement("span");
     label.className = "todo-text";
     label.textContent = todo.text;
-
-    const categorySelect = buildCategorySelect(todo, categories);
-
-    // 截止时刻：仅设置了截止日期时出现（时刻依赖日期才有意义）；空值收成时钟图标
-    let timeInput: HTMLInputElement | null = null;
-    if (todo.dueDate) {
-      timeInput = document.createElement("input");
-      timeInput.type = "time";
-      timeInput.className = "todo-due-time";
-      timeInput.setAttribute("aria-label", "截止时刻");
-      timeInput.value = todo.dueTime ?? "";
-      if (!todo.dueTime) timeInput.classList.add("is-empty");
-    }
-
-    const dueInput = document.createElement("input");
-    dueInput.type = "date";
-    dueInput.className = "todo-due";
-    dueInput.setAttribute("aria-label", "截止日期");
-    dueInput.value = todo.dueDate ?? ""; // 属性赋值不触发 change，无回写死循环
-    if (!todo.dueDate) dueInput.classList.add("is-empty"); // 空值时 CSS 只显示日历图标
-
-    const meta = document.createElement("div");
-    meta.className = "todo-meta";
-    if (todo.category) {
-      const dot = document.createElement("span");
-      dot.className = "cat-dot";
-      dot.style.background = categoryColor(todo.category);
-      dot.title = todo.category;
-      dot.setAttribute("aria-hidden", "true");
-      meta.append(dot);
-    }
-    meta.append(categorySelect);
-    if (timeInput) meta.append(timeInput);
-    meta.append(dueInput);
-    // 友好日期状态：已过期 N 天 / 今天 / 明天（其余日期原生控件已可读，不重复）
-    const status = dueStatus(todo);
-    if (status) {
-      const chip = document.createElement("span");
-      chip.className = `due-chip is-${status.kind}`;
-      chip.textContent = status.label;
-      meta.append(chip);
-    }
-    if (todo.recurrence) {
-      const repeat = document.createElement("span");
-      repeat.className = "todo-repeat";
-      repeat.title = `${REPEAT_LABEL[todo.recurrence] ?? todo.recurrence}重复`;
-      repeat.textContent = "↻";
-      meta.append(repeat);
-    }
+    main.append(label);
 
     const pin = document.createElement("button");
     pin.type = "button";
@@ -469,10 +440,62 @@ export function renderList(
     del.setAttribute("aria-label", "删除");
     del.textContent = "✕";
 
-    li.append(label, meta, pin, clone, del);
+    main.append(pin, clone, del);
+    li.append(main);
 
-    // 备注与子任务：第二行附加区（批量/回收站视图不渲染，保持行紧凑）
     if (!opts.batch) {
+      // 第二行：元信息控件（批量模式省略，保持勾选列表紧凑）
+      const meta = document.createElement("div");
+      meta.className = "todo-meta";
+      if (todo.category) {
+        const dot = document.createElement("span");
+        dot.className = "cat-dot";
+        dot.style.background = categoryColor(todo.category);
+        dot.title = todo.category;
+        dot.setAttribute("aria-hidden", "true");
+        meta.append(dot);
+      }
+      meta.append(buildCategorySelect(todo, categories));
+
+      // 截止时刻：仅设置了截止日期时出现（时刻依赖日期才有意义）；空值收成时钟图标
+      if (todo.dueDate) {
+        const timeInput = document.createElement("input");
+        timeInput.type = "time";
+        timeInput.className = "todo-due-time";
+        timeInput.setAttribute("aria-label", "截止时刻");
+        timeInput.value = todo.dueTime ?? "";
+        if (!todo.dueTime) timeInput.classList.add("is-empty");
+        meta.append(timeInput);
+      }
+
+      const dueInput = document.createElement("input");
+      dueInput.type = "date";
+      dueInput.className = "todo-due";
+      dueInput.setAttribute("aria-label", "截止日期");
+      dueInput.value = todo.dueDate ?? ""; // 属性赋值不触发 change，无回写死循环
+      if (!todo.dueDate) dueInput.classList.add("is-empty"); // 空值时 CSS 只显示日历图标
+      meta.append(dueInput);
+
+      // 友好日期状态：已过期 N 天 / 今天 / 明天（其余日期原生控件已可读，不重复）
+      const status = dueStatus(todo);
+      if (status) {
+        const chip = document.createElement("span");
+        chip.className = `due-chip is-${status.kind}`;
+        chip.textContent = status.label;
+        meta.append(chip);
+      }
+
+      if (todo.recurrence) {
+        const repeat = document.createElement("span");
+        repeat.className = "todo-repeat";
+        repeat.title = `${REPEAT_LABEL[todo.recurrence] ?? todo.recurrence}重复`;
+        repeat.textContent = "↻";
+        meta.append(repeat);
+      }
+
+      li.append(meta);
+
+      // 第三行：备注与子任务（无备注无子任务时仍给出「＋备注 / ＋子任务」入口）
       const extras = buildExtras(todo);
       if (extras) li.append(extras);
     }

@@ -39,7 +39,16 @@ const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
 const { filterButton, filterMenu, searchInput, newCategoryInput, addCategoryBtn, categoryHint } =
   buildToolbar(listEl);
 
-// 全部完成庆祝条：toolbar 与列表之间（buildToolbar 之后插入，正好排在筛选行下面）
+// 全部完成庆祝条 + 完成进度线：toolbar 与列表之间
+const progressLine = document.createElement("div");
+progressLine.id = "progress-line";
+progressLine.className = "progress-line hidden";
+progressLine.setAttribute("aria-hidden", "true");
+const progressFill = document.createElement("div");
+progressFill.className = "progress-line-fill";
+progressLine.append(progressFill);
+listEl.before(progressLine);
+
 const allDoneBanner = document.createElement("div");
 allDoneBanner.id = "all-done";
 allDoneBanner.className = "all-done hidden";
@@ -195,15 +204,28 @@ function render(): void {
       deletedView
         ? "回收站是空的"
         : app.todos.some((t) => !isDeleted(t))
-          ? "该筛选下暂无待办"
+          ? "没有匹配的待办，试试调整筛选或搜索词"
           : "这里空空如也，添加一条待办吧～",
       categories,
-      { deleted: deletedView, batch: app.batchMode, selected: app.selectedIds },
+      {
+        deleted: deletedView,
+        batch: app.batchMode,
+        selected: app.selectedIds,
+        emptyIcon: deletedView ? "🗑" : app.todos.some((t) => !isDeleted(t)) ? "🔍" : "🌱",
+      },
     );
   }
 
+  // 完成进度线：现存条目的完成占比（回收站/批量模式隐藏）
   const live = app.todos.filter((t) => !isDeleted(t));
   const deletedCount = app.todos.filter((t) => deletedRecently(t)).length;
+  const doneCount = live.filter((t) => t.completed).length;
+  const showProgress = !deletedView && !app.batchMode && live.length > 0;
+  progressLine.classList.toggle("hidden", !showProgress);
+  if (showProgress) {
+    progressFill.style.width = `${Math.round((doneCount / live.length) * 100)}%`;
+    progressLine.title = `已完成 ${doneCount}/${live.length}`;
+  }
   if (deletedView) {
     countEl.textContent = `回收站 ${deletedCount} 项，保留 30 天后自动清除`;
   } else {
