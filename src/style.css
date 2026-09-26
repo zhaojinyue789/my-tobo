@@ -1402,6 +1402,83 @@ body.is-reordering .todo-item:not(.is-dragging) {
 }
 
 /* ============================================================
+   撤销 Toast：破坏性操作后的底部悬浮提示条
+   ============================================================ */
+
+/* 配色固定深色胶囊，不随主题翻转，保证两种模式下都清晰可读 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 480px);
+  padding: 10px 14px 10px 18px;
+  background: #2b3138;
+  color: #f4f6f8;
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-pop);
+  animation: toast-in 0.2s ease-out;
+  z-index: 100;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.toast-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.toast-undo {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #7cb0fb;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.toast-undo:hover {
+  background: rgba(124, 176, 251, 0.15);
+}
+
+.toast-undo:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(124, 176, 251, 0.35);
+}
+
+.toast-close {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #aab3bd;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.toast-close:hover {
+  color: #f4f6f8;
+}
+
+/* ============================================================
    深色模式：仅覆盖设计令牌
    ============================================================ */
 

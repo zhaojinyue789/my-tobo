@@ -2,6 +2,7 @@ import {
   advanceDate,
   isValidCategory,
   loadTodos,
+  sameTodos,
   topOrder,
   type Todo,
 } from "./todo";
@@ -103,6 +104,34 @@ export function updateTodo(id: string, patch: Partial<Todo>): Todo | undefined {
 /** 设备本地 UX 标记（notified/reminded 等）：不 bump updatedAt，不参与 LWW */
 export function markTodo(id: string, patch: Partial<Todo>): void {
   app.todos = app.todos.map((t) => (t.id === id ? { ...t, ...patch } : t));
+}
+
+/** 捕获撤销快照：破坏性操作（删除/清除）前调用，浅拷贝每条（字段值均不可变，浅拷贝足够） */
+export function captureSnapshot(): Todo[] {
+  return app.todos.map((t) => ({ ...t }));
+}
+
+/**
+ * 撤销快照回滚：有差异的条目以快照为准并 bump updatedAt——这样撤销改动在双端 LWW 中
+ * 获胜（包括复活已同步到远端的删除）；快照之后新增的条目保留；无差异条目不 bump，
+ * 避免一次撤销触发全量推送。
+ */
+export function undoSnapshot(snapshot: Todo[]): void {
+  const now = Date.now();
+  const current = new Map(app.todos.map((t) => [t.id, t]));
+  const restored = new Map<string, Todo>();
+  for (const s of snapshot) {
+    const c = current.get(s.id);
+    if (c && sameTodos([c], [s])) continue;
+    restored.set(s.id, { ...s, updatedAt: now });
+  }
+  if (restored.size === 0) return;
+  app.todos = app.todos.map((t) => restored.get(t.id) ?? t);
+  const currentIds = new Set(app.todos.map((t) => t.id));
+  for (const [id, t] of restored) {
+    if (!currentIds.has(id)) app.todos.push(t); // 快照有、当前无（墓碑被物理清除）：收回
+  }
+  persist();
 }
 
 /** 完成/取消完成；重复任务被完成时按 dueDate 生成下一实例置顶（取消完成不回收已生成的实例）。

@@ -1,12 +1,14 @@
 import { buildSelectOption } from "./ui";
 import { isDeleted, markDeleted, normalizeCategory } from "./todo";
-import { app, persist, setCompleted, visibleTodos } from "./state";
+import { app, captureSnapshot, persist, setCompleted, undoSnapshot, visibleTodos } from "./state";
+import { showUndoToast } from "./toast";
 
 export interface BatchRefs {
   toggleBtn: HTMLButtonElement;
   exitBtn: HTMLButtonElement;
   allBtn: HTMLButtonElement;
   doneBtn: HTMLButtonElement;
+  pinBtn: HTMLButtonElement;
   deleteBtn: HTMLButtonElement;
   categorySelect: HTMLSelectElement;
 }
@@ -38,12 +40,31 @@ export function setupBatch(refs: BatchRefs, render: () => void): void {
       persist();
     }
   });
+  // 批量置顶：选中项里混有已置顶时整体置顶；全部已置顶则整体取消（按多数语义翻转）
+  refs.pinBtn.addEventListener("click", () => {
+    if (app.selectedIds.size === 0) return;
+    const ids = new Set(app.selectedIds);
+    const targets = app.todos.filter((t) => ids.has(t.id) && !isDeleted(t));
+    if (targets.length === 0) return;
+    const allPinned = targets.every((t) => t.pinned === true);
+    app.todos = app.todos.map((t) =>
+      ids.has(t.id) && !isDeleted(t)
+        ? { ...t, pinned: allPinned ? undefined : true, updatedAt: Date.now() }
+        : t,
+    );
+    app.selectedIds.clear();
+    persist();
+  });
   refs.deleteBtn.addEventListener("click", () => {
     if (app.selectedIds.size === 0) return;
     const ids = new Set(app.selectedIds);
+    const targets = app.todos.filter((t) => ids.has(t.id) && !isDeleted(t));
+    if (targets.length === 0) return;
+    const snapshot = captureSnapshot();
     app.todos = app.todos.map((t) => (ids.has(t.id) && !isDeleted(t) ? markDeleted(t) : t));
     app.selectedIds.clear();
     persist();
+    showUndoToast(`已删除 ${targets.length} 项`, () => undoSnapshot(snapshot));
   });
   refs.categorySelect.addEventListener("change", () => {
     const next = normalizeCategory(refs.categorySelect.value);

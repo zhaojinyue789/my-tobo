@@ -8,10 +8,12 @@ import {
 import { buildToolbar, categoryOptions, renderList, syncFilterMenu, type Filter } from "./ui";
 import {
   app,
+  captureSnapshot,
   initAppServices,
   manualCategories,
   persist,
   saveManualCategories,
+  undoSnapshot,
   visibleTodos,
 } from "./state";
 import { isDragging } from "./drag";
@@ -22,6 +24,7 @@ import { setupBatch, syncBatchCategory } from "./batch";
 import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
 import { notifyDueBatch } from "./due-scan";
+import { showUndoToast } from "./toast";
 import "./style.css";
 
 // ---------- DOM 装配 ----------
@@ -40,6 +43,7 @@ const batchBar = document.querySelector<HTMLElement>("#batch-bar")!;
 const batchCountEl = document.querySelector<HTMLElement>("#batch-count")!;
 const batchAllBtn = document.querySelector<HTMLButtonElement>("#batch-all")!;
 const batchDoneBtn = document.querySelector<HTMLButtonElement>("#batch-done")!;
+const batchPinBtn = document.querySelector<HTMLButtonElement>("#batch-pin")!;
 const batchDeleteBtn = document.querySelector<HTMLButtonElement>("#batch-delete")!;
 const batchCategory = document.querySelector<HTMLSelectElement>("#batch-category")!;
 const batchExitBtn = document.querySelector<HTMLButtonElement>("#batch-exit")!;
@@ -89,6 +93,7 @@ setupBatch(
     exitBtn: batchExitBtn,
     allBtn: batchAllBtn,
     doneBtn: batchDoneBtn,
+    pinBtn: batchPinBtn,
     deleteBtn: batchDeleteBtn,
     categorySelect: batchCategory,
   },
@@ -200,22 +205,28 @@ function renderSyncStatus(status: SyncStatus): void {
   }
 }
 
-// ---------- 清除动作（footer） ----------
+// ---------- 清除动作（footer，均带撤销窗口） ----------
 
 clearBtn.addEventListener("click", () => {
+  const count = app.todos.filter((t) => !isDeleted(t) && t.completed).length;
+  if (count === 0) return;
+  const snapshot = captureSnapshot();
   const now = Date.now();
   app.todos = app.todos.map((t) =>
     !isDeleted(t) && t.completed ? { ...t, deletedAt: now, updatedAt: now } : t,
   );
   persist();
+  showUndoToast(`已清除 ${count} 项已完成`, () => undoSnapshot(snapshot));
 });
 
-// 清除全部：confirm 二次确认后给全部现存条目打墓碑（不能物理清空数组，
+// 清除全部：confirm 二次确认 + 撤销窗口双保险（不能物理清空数组，
 // 否则远端仍存有这些条目，下次同步会按 LWW 全部复活）；persist() 内部触发防抖自动同步
 clearAllBtn.addEventListener("click", () => {
   if (!confirm("确定要清除全部待办吗？清除后不可恢复")) return;
+  const snapshot = captureSnapshot();
   app.todos = app.todos.map((t) => (isDeleted(t) ? t : markDeleted(t)));
   persist();
+  showUndoToast("已清除全部待办", () => undoSnapshot(snapshot));
 });
 
 // ---------- 复合筛选（分类/状态二选一） ----------

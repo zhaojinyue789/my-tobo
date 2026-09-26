@@ -6,9 +6,19 @@ import {
   orderBetween,
   withOrder,
 } from "./todo";
-import { app, persist, saveOnly, setCompleted, updateTodo, visibleTodos } from "./state";
+import {
+  app,
+  captureSnapshot,
+  persist,
+  saveOnly,
+  setCompleted,
+  undoSnapshot,
+  updateTodo,
+  visibleTodos,
+} from "./state";
 import { attachDragReorder } from "./drag";
 import { notifyTodoOnce } from "./due-scan";
+import { showUndoToast } from "./toast";
 import type { Todo } from "./todo";
 
 /**
@@ -27,7 +37,14 @@ export function setupListInteractions(
     if (target.classList.contains("todo-toggle")) {
       if (id) setCompleted(id, !app.todos.find((t) => t.id === id)?.completed);
     } else if (target.classList.contains("todo-delete")) {
-      if (id) updateTodo(id, { deletedAt: Date.now() });
+      if (id) {
+        const current = app.todos.find((t) => t.id === id);
+        if (current && !isDeleted(current)) {
+          const snapshot = captureSnapshot();
+          updateTodo(id, { deletedAt: Date.now() });
+          showUndoToast(`已删除「${current.text}」`, () => undoSnapshot(snapshot));
+        }
+      }
     } else if (target.classList.contains("todo-text")) {
       beginEdit(item, id);
       return;
