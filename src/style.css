@@ -1874,10 +1874,11 @@ body.is-reordering .todo-item:not(.is-dragging) {
 
 /* ============================================================
    深色模式：仅覆盖设计令牌
+   两个入口保持同步：(1) 系统深色且用户未强制浅色 (2) 用户显式选深色
    ============================================================ */
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #12161b;
     --card: #1a2027;
     --text: #e7eaee;
@@ -1899,6 +1900,29 @@ body.is-reordering .todo-item:not(.is-dragging) {
     --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.55);
     --ring: 0 0 0 3px rgba(59, 130, 246, 0.3);
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #12161b;
+  --card: #1a2027;
+  --text: #e7eaee;
+  --text-secondary: #aab3bd;
+  --text-muted: #737d89;
+  --accent-soft: rgba(59, 130, 246, 0.18);
+  --border: #2a323c;
+  --border-strong: #39424e;
+  --field: #212932;
+  --field-hover: #2a333e;
+  --hover: #1f262e;
+  --danger-text: #f87171;
+  --warn-text: #fdba74;
+  --warn-border: #7c2d12;
+  --warn-soft: #2b1a0e;
+  --shadow-card:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.55);
+  --ring: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
 
 /* ============================================================

@@ -24,6 +24,7 @@ import { setupBatch, syncBatchCategory } from "./batch";
 import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
 import { setupStats } from "./stats";
+import { setupThemeToggle } from "./theme";
 import { notifyDueBatch } from "./due-scan";
 import { showUndoToast } from "./toast";
 import { syncDueBanner } from "./banner";
@@ -61,6 +62,7 @@ const syncDot = document.querySelector<HTMLElement>("#sync-dot")!;
 const syncText = document.querySelector<HTMLElement>("#sync-text")!;
 const syncNowBtn = document.querySelector<HTMLButtonElement>("#sync-now")!;
 const syncSettingsBtn = document.querySelector<HTMLButtonElement>("#sync-settings")!;
+const themeToggleBtn = document.querySelector<HTMLButtonElement>("#theme-toggle")!;
 
 const modal = document.querySelector<HTMLElement>("#sync-modal")!;
 const gistTokenInput = document.querySelector<HTMLInputElement>("#gist-token")!;
@@ -77,6 +79,8 @@ const dueBannerViewBtn = document.querySelector<HTMLButtonElement>("#due-banner-
 const dueBannerCloseBtn = document.querySelector<HTMLButtonElement>("#due-banner-close")!;
 
 // ---------- 模块装配 ----------
+
+setupThemeToggle(themeToggleBtn);
 
 const sync = new SyncController({
   onTodos: (merged) => {
