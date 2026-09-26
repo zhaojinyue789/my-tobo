@@ -225,11 +225,17 @@ function closeFilterMenu(): void {
   filterButton.setAttribute("aria-expanded", "false");
 }
 
-// 按钮：开合菜单
+// 按钮：开合菜单；展开时把焦点放到选中项（无则首项），符合 listbox 键盘模型
 filterButton.addEventListener("click", () => {
   const open = !filterMenu.classList.contains("open");
   filterMenu.classList.toggle("open", open);
   filterButton.setAttribute("aria-expanded", String(open));
+  if (open) {
+    const target =
+      filterMenu.querySelector<HTMLElement>("[aria-selected='true']") ??
+      filterMenu.querySelector<HTMLElement>("[role='option']");
+    target?.focus();
+  }
 });
 
 // 选项：设置视图态后立即重渲染；同项再点 = 取消筛选恢复「全部待办」
@@ -252,8 +258,35 @@ filterMenu.addEventListener("click", (e) => {
   render();
 });
 
-// 键盘可达：选项获得焦点时 Enter/Space 视同点击
+// 键盘可达：Enter/Space 视同点击；方向键/Home/End 在选项间移动（标准 listbox 模型）；
+// Esc 收起并把焦点还给按钮
 filterMenu.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.stopPropagation(); // 全局 Esc 只做收起，这里的收起还带焦点归还
+    closeFilterMenu();
+    filterButton.focus();
+    return;
+  }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+    e.preventDefault();
+    const opts = [...filterMenu.querySelectorAll<HTMLElement>("[data-kind]")];
+    if (opts.length === 0) return;
+    const i = opts.indexOf(document.activeElement as HTMLElement);
+    const j =
+      e.key === "ArrowDown"
+        ? i < 0
+          ? 0
+          : Math.min(i + 1, opts.length - 1)
+        : e.key === "ArrowUp"
+          ? i < 0
+            ? 0
+            : Math.max(i - 1, 0)
+          : e.key === "Home"
+            ? 0
+            : opts.length - 1;
+    opts[j].focus();
+    return;
+  }
   if (e.key !== "Enter" && e.key !== " ") return;
   const opt = (e.target as HTMLElement).closest<HTMLElement>("[data-kind]");
   if (!opt) return;

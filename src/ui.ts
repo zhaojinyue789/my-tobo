@@ -212,7 +212,8 @@ export function syncFilterMenu(
     opt.className = "filter-menu-option" + (selected ? " is-selected" : "");
     opt.setAttribute("role", "option");
     opt.setAttribute("aria-selected", String(selected));
-    opt.tabIndex = 0;
+    // listbox 漫游 tabindex：只有选中项（无选中则首项）可 Tab 进入，其余靠方向键导航
+    opt.tabIndex = selected ? 0 : -1;
     opt.dataset.kind = kind;
     opt.dataset.value = value;
     opt.textContent = label;
@@ -228,6 +229,11 @@ export function syncFilterMenu(
     option("status", "completed", "已完成"),
     option("status", "deleted", "最近删除"),
   );
+  // 无激活筛选时首项可 Tab 进入
+  if (!menu.querySelector("[aria-selected='true']")) {
+    const first = menu.querySelector<HTMLElement>("[role='option']");
+    if (first) first.tabIndex = 0;
+  }
 
   const text = button.querySelector<HTMLElement>(".filter-button-text")!;
   text.textContent =
@@ -315,7 +321,7 @@ export function renderList(
       const check = document.createElement("input");
       check.type = "checkbox";
       check.className = "todo-check";
-      check.setAttribute("aria-label", "选择");
+      check.setAttribute("aria-label", `选择：${todo.text}`);
       check.checked = opts.selected?.has(todo.id) ?? false;
       li.append(check);
     } else {
