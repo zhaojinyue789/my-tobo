@@ -109,7 +109,16 @@ setupBatch(
   },
   render,
 );
-setupBackup(exportBtn, importBtn, importFileInput);
+setupBackup(exportBtn, importBtn, importFileInput, {
+  modal: document.querySelector<HTMLElement>("#import-modal")!,
+  errorEl: document.querySelector<HTMLElement>("#import-error")!,
+  summaryEl: document.querySelector<HTMLElement>("#import-summary")!,
+  newEl: document.querySelector<HTMLElement>("#import-new")!,
+  updateEl: document.querySelector<HTMLElement>("#import-update")!,
+  skipEl: document.querySelector<HTMLElement>("#import-skip")!,
+  confirmBtn: document.querySelector<HTMLButtonElement>("#import-confirm")!,
+  cancelBtn: document.querySelector<HTMLButtonElement>("#import-cancel")!,
+});
 setupStats(
   { toggleBtn: statsToggleBtn, modal: statsModal, closeBtn: statsCloseBtn, body: statsBody },
   () => app.todos,

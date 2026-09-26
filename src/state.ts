@@ -1,5 +1,6 @@
 import {
   advanceDate,
+  isDeleted,
   isValidCategory,
   loadTodos,
   sameTodos,
@@ -115,25 +116,42 @@ export function captureSnapshot(): Todo[] {
 
 /**
  * 撤销快照回滚：有差异的条目以快照为准并 bump updatedAt——这样撤销改动在双端 LWW 中
- * 获胜（包括复活已同步到远端的删除）；快照之后新增的条目保留；无差异条目不 bump，
- * 避免一次撤销触发全量推送。
+ * 获胜（包括复活已同步到远端的删除）；快照之后新增的条目默认保留。
+ * removeIds（可选，如导入带来的全新条目）：对这些条目打墓碑而非物理删除——若撤销前
+ * 同步已把它们推到远端，物理删除会被远端重新收编复活；墓碑按 LWW 获胜，进回收站，
+ * 语义与普通删除一致。
  */
-export function undoSnapshot(snapshot: Todo[]): void {
+export function undoSnapshot(snapshot: Todo[], removeIds?: ReadonlySet<string>): void {
   const now = Date.now();
+  let changed = false;
+
+  if (
+    removeIds &&
+    removeIds.size > 0 &&
+    app.todos.some((t) => removeIds.has(t.id) && !isDeleted(t))
+  ) {
+    app.todos = app.todos.map((t) =>
+      removeIds.has(t.id) && !isDeleted(t) ? { ...t, deletedAt: now, updatedAt: now } : t,
+    );
+    changed = true;
+  }
+
   const current = new Map(app.todos.map((t) => [t.id, t]));
   const restored = new Map<string, Todo>();
   for (const s of snapshot) {
     const c = current.get(s.id);
-    if (c && sameTodos([c], [s])) continue;
+    if (c && sameTodos([c], [s])) continue; // 无差异不 bump，避免多余的同步写入
     restored.set(s.id, { ...s, updatedAt: now });
   }
-  if (restored.size === 0) return;
-  app.todos = app.todos.map((t) => restored.get(t.id) ?? t);
-  const currentIds = new Set(app.todos.map((t) => t.id));
-  for (const [id, t] of restored) {
-    if (!currentIds.has(id)) app.todos.push(t); // 快照有、当前无（墓碑被物理清除）：收回
+  if (restored.size > 0) {
+    changed = true;
+    app.todos = app.todos.map((t) => restored.get(t.id) ?? t);
+    const currentIds = new Set(app.todos.map((t) => t.id));
+    for (const [id, t] of restored) {
+      if (!currentIds.has(id)) app.todos.push(t); // 快照有、当前无（墓碑被物理清除）：收回
+    }
   }
-  persist();
+  if (changed) persist();
 }
 
 /** 完成/取消完成；重复任务被完成时按 dueDate 生成下一实例置顶（取消完成不回收已生成的实例）。

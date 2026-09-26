@@ -1783,6 +1783,18 @@ body.is-reordering .todo-item:not(.is-dragging) {
   color: var(--text-muted);
 }
 
+/* 导入预览摘要 */
+.import-summary p {
+  margin: 6px 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.import-summary b {
+  color: var(--text);
+  font-size: 15px;
+}
+
 /* ============================================================
    撤销 Toast：破坏性操作后的底部悬浮提示条
    ============================================================ */

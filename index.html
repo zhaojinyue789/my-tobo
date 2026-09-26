@@ -126,6 +126,22 @@
       </div>
     </div>
 
+    <div id="import-modal" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+        <h2 id="import-modal-title" class="modal-title">导入预览</h2>
+        <p id="import-error" class="modal-error hidden"></p>
+        <div id="import-summary" class="import-summary hidden">
+          <p>将新增 <b id="import-new">0</b> 条（本地没有的条目）</p>
+          <p>将更新 <b id="import-update">0</b> 条（备份中的版本较新，按修改时间覆盖）</p>
+          <p>跳过 <b id="import-skip">0</b> 条（本地较新或内容相同，不会被覆盖）</p>
+        </div>
+        <div class="modal-actions">
+          <button id="import-confirm" class="modal-btn primary" type="button">确认导入</button>
+          <button id="import-cancel" class="modal-btn" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
