@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceDate,
+  cleanTodoFields,
   createTodo,
   isDeleted,
   isDueTomorrow,
@@ -122,6 +123,63 @@ describe("mergeTodos（LWW + 展示顺序）", () => {
   });
 });
 
+describe("cleanTodoFields（白名单清洗）", () => {
+  it("非法可选字段按未填写清洗，updatedAt 缺失回退 createdAt", () => {
+    const out = cleanTodoFields({
+      ...t(),
+      updatedAt: undefined as unknown as number,
+      category: 42 as unknown as string,
+      dueDate: "2026/09/26" as unknown as string,
+      dueTime: "25:99" as unknown as string,
+      recurrence: "yearly" as unknown as Todo["recurrence"],
+      order: "first" as unknown as number,
+      notified: "yes" as unknown as boolean,
+    });
+    expect(out.updatedAt).toBe(out.createdAt);
+    expect(out.category).toBeUndefined();
+    expect(out.dueDate).toBeUndefined();
+    expect(out.dueTime).toBeUndefined();
+    expect(out.recurrence).toBeUndefined();
+    expect(out.order).toBeUndefined();
+    expect(out.notified).toBeUndefined();
+  });
+  it("白名单重建：未知字段一律丢弃", () => {
+    const out = cleanTodoFields({
+      ...t(),
+      hacked: "evil",
+      extraNum: 1,
+    } as Todo & { hacked: string; extraNum: number });
+    expect((out as unknown as Record<string, unknown>).hacked).toBeUndefined();
+    expect((out as unknown as Record<string, unknown>).extraNum).toBeUndefined();
+    expect(out.id).toBeTruthy();
+  });
+  it("合法值保留", () => {
+    const out = cleanTodoFields({
+      ...t(),
+      category: " 工作 ",
+      dueDate: "2026-09-26",
+      dueTime: "09:30",
+      recurrence: "weekly",
+      pinned: true,
+      order: -3.5,
+      notified: true,
+      reminded: true,
+      deletedAt: 99,
+    });
+    expect(out).toMatchObject({
+      category: "工作",
+      dueDate: "2026-09-26",
+      dueTime: "09:30",
+      recurrence: "weekly",
+      pinned: true,
+      order: -3.5,
+      notified: true,
+      reminded: true,
+      deletedAt: 99,
+    });
+  });
+});
+
 describe("墓碑与比较", () => {
   it("purgeTombstones 清过期墓碑、保留新鲜墓碑", () => {
     const now = Date.now();
@@ -142,6 +200,11 @@ describe("墓碑与比较", () => {
   it("sameTodos 与数组顺序无关", () => {
     expect(sameTodos([t({ id: "a" }), t({ id: "b" })], [t({ id: "b" }), t({ id: "a" })])).toBe(true);
     expect(sameTodos([t({ id: "a", order: 1 })], [t({ id: "a", order: 2 })])).toBe(false);
+  });
+  it("sameTodos 与对象属性插入顺序无关", () => {
+    const a = t({ id: "a", category: "工作", pinned: true });
+    const b = { pinned: true, category: "工作", text: "x", completed: false, id: "a", createdAt: a.createdAt, updatedAt: a.updatedAt } as Todo;
+    expect(sameTodos([a], [b])).toBe(true);
   });
   it("createTodo 生成 id 且 createdAt = updatedAt", () => {
     const todo = createTodo("hi");

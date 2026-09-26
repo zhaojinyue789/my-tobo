@@ -193,21 +193,34 @@ function compareDisplay(a: Todo, b: Todo): number {
   return b.createdAt - a.createdAt;
 }
 
-/** 旧版本数据缺新字段时读取补齐；新字段非法值按未填写处理，条目保留 */
-function migrate(item: Todo): Todo {
+/**
+ * 字段白名单重建 + 非法值清洗：本地 migrate 与远端 sanitizeRemoteTodo 共用的唯一清洗实现。
+ * 只保留模型声明字段，未知字段一律丢弃（防止脏字段随同步永久传播）；
+ * 新字段非法值按未填写处理，条目保留。
+ */
+export function cleanTodoFields(t: Todo): Todo {
   return {
-    ...item,
-    updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : item.createdAt,
-    deletedAt: typeof item.deletedAt === "number" ? item.deletedAt : undefined,
-    category: normalizeCategory(item.category),
-    dueDate: isValidDueDate(item.dueDate) ? item.dueDate : undefined,
-    dueTime: isValidDueTime(item.dueTime) ? item.dueTime : undefined,
-    recurrence: isRecurrence(item.recurrence) ? item.recurrence : undefined,
-    pinned: item.pinned === true ? true : undefined,
-    order: typeof item.order === "number" && Number.isFinite(item.order) ? item.order : undefined,
-    notified: typeof item.notified === "boolean" ? item.notified : false,
-    reminded: typeof item.reminded === "boolean" ? item.reminded : false,
+    id: t.id,
+    text: t.text,
+    completed: t.completed ?? false,
+    createdAt: t.createdAt,
+    updatedAt:
+      typeof t.updatedAt === "number" && Number.isFinite(t.updatedAt) ? t.updatedAt : t.createdAt,
+    deletedAt: typeof t.deletedAt === "number" ? t.deletedAt : undefined,
+    category: normalizeCategory(t.category),
+    dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
+    dueTime: isValidDueTime(t.dueTime) ? t.dueTime : undefined,
+    recurrence: isRecurrence(t.recurrence) ? t.recurrence : undefined,
+    pinned: t.pinned === true ? true : undefined,
+    order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
+    notified: typeof t.notified === "boolean" ? t.notified : undefined,
+    reminded: typeof t.reminded === "boolean" ? t.reminded : undefined,
   };
+}
+
+/** 旧版本数据缺新字段时读取补齐；清洗规则统一在 cleanTodoFields */
+function migrate(item: Todo): Todo {
+  return cleanTodoFields(item);
 }
 
 /**
@@ -311,9 +324,23 @@ export function orderBetween(
   return fallback;
 }
 
+/** 稳定序列化：对象键按字典序重排后输出，属性插入顺序不同的等价对象得到相同字符串 */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => {
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      const src = v as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(src).sort()) out[k] = src[k];
+      return out;
+    }
+    return v;
+  });
+}
+
 export function sameTodos(a: Todo[], b: Todo[]): boolean {
   if (a.length !== b.length) return false;
-  const key = (t: Todo) => JSON.stringify(t);
+  // 稳定键序序列化：不依赖对象属性插入顺序，远端旧条目未过同序清洗也不会误判不同
+  const key = (t: Todo) => stableStringify(t);
   const sort = (list: Todo[]) => [...list].map(key).sort();
   const [sa, sb] = [sort(a), sort(b)];
   return sa.every((v, i) => v === sb[i]);

@@ -1,10 +1,7 @@
 import {
-  isValidDueDate,
-  isValidDueTime,
-  isRecurrence,
+  cleanTodoFields,
   loadTodos,
   mergeTodos,
-  normalizeCategory,
   purgeTombstones,
   saveTodos,
   sameTodos,
@@ -195,7 +192,7 @@ export async function saveSyncConfig(cfg: SyncConfig | null): Promise<boolean> {
 }
 
 /** 容错：用户可能直接粘贴 Gist 页面地址（如 https://gist.github.com/<user>/<id>），提取末尾的 Gist ID */
-function normalizeGistId(raw: string): string {
+export function normalizeGistId(raw: string): string {
   const input = raw.trim();
   if (!/gist\.github\.com/i.test(input)) return input;
   const path = input.split(/[?#]/, 1)[0];
@@ -302,7 +299,7 @@ async function gistRequest(
 
 /**
  * 远端条目校验：id/text/createdAt/updatedAt 必填且类型正确，completed/deletedAt 可选但类型须对；
- * category/dueDate/order/notified 可选：类型或内容非法时按未填写/缺失清空，不作为丢弃依据；
+ * 可选字段清洗与本地 migrate 共用 cleanTodoFields（单一实现，白名单重建，未知字段丢弃）；
  * 脏数据（Gist 被手动改坏等）返回 null 丢弃，防止污染渲染与本地存储。
  * 导出供单元测试使用。
  */
@@ -322,25 +319,20 @@ export function sanitizeRemoteTodo(item: unknown): Todo | null {
   ) {
     return null;
   }
-  return {
-    ...t,
-    completed: t.completed ?? false,
-    category: normalizeCategory(t.category),
-    dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
-    dueTime: isValidDueTime(t.dueTime) ? t.dueTime : undefined,
-    recurrence: isRecurrence(t.recurrence) ? t.recurrence : undefined,
-    pinned: t.pinned === true ? true : undefined,
-    order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
-    notified: typeof t.notified === "boolean" ? t.notified : undefined,
-    reminded: typeof t.reminded === "boolean" ? t.reminded : undefined,
-  };
+  return cleanTodoFields(t);
 }
 
 function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
   const files = gist.files as Record<string, { content?: string }> | undefined;
   const content = files?.[GIST_FILENAME]?.content;
   if (!content) return [];
-  const data: unknown = JSON.parse(content);
+  let data: unknown;
+  try {
+    data = JSON.parse(content);
+  } catch {
+    // Gist 内容被手动改坏时不要拿原始异常吓用户，给出可操作提示
+    throw new Error("远端 Gist 内容不是合法 JSON（可能被手动修改），本次合并已中止");
+  }
   const { version } = (data ?? {}) as { version?: unknown };
   // 版本契约：无 version 的历史 payload 与已知版本（v1–v4，须与 gistPayload 同步）照常解析；
   // 未来/未知版本号只警告不拒绝，唯一整批放弃条件是 todos 非数组。

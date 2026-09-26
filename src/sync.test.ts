@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeRemoteTodo } from "./sync";
+import { normalizeGistId, sanitizeRemoteTodo } from "./sync";
 
 describe("sanitizeRemoteTodo（远端条目校验）", () => {
   const base = {
@@ -81,5 +81,28 @@ describe("sanitizeRemoteTodo（远端条目校验）", () => {
     expect(out!.recurrence).toBeUndefined();
     expect(out!.pinned).toBeUndefined();
     expect(out!.reminded).toBeUndefined();
+  });
+
+  it("白名单重建：远端条目上的未知多余字段被丢弃，不随同步传播", () => {
+    const out = sanitizeRemoteTodo({ ...base, hacked: "evil", legacy: 1 } as Record<string, unknown>);
+    expect(out).not.toBeNull();
+    expect((out as unknown as Record<string, unknown>).hacked).toBeUndefined();
+    expect((out as unknown as Record<string, unknown>).legacy).toBeUndefined();
+  });
+});
+
+describe("normalizeGistId（Gist 地址容错）", () => {
+  it("纯 ID 原样返回", () => {
+    expect(normalizeGistId("abc123")).toBe("abc123");
+  });
+  it("完整 Gist 地址提取末段 ID", () => {
+    expect(normalizeGistId("https://gist.github.com/user/abc123")).toBe("abc123");
+    expect(normalizeGistId("http://GIST.GITHUB.COM/user/abc123/")).toBe("abc123");
+  });
+  it("带查询串/锚点的地址取路径末段", () => {
+    expect(normalizeGistId("https://gist.github.com/user/abc123?x=1#file-json")).toBe("abc123");
+  });
+  it("首尾空白容忍", () => {
+    expect(normalizeGistId("  abc123  ")).toBe("abc123");
   });
 });
