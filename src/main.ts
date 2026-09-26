@@ -7,6 +7,8 @@ import {
   markDeleted,
   normalizeCategory,
   saveTodos,
+  topOrder,
+  withOrder,
   type Todo,
 } from "./todo";
 import {
@@ -19,6 +21,7 @@ import {
   type Filter,
   type View,
 } from "./ui";
+import { attachDragReorder, isDragging } from "./drag";
 import { ensurePermission, notifyTodoDue } from "./notify";
 import { SyncController, loadSyncConfig, loadSyncGistId, type SyncStatus } from "./sync";
 import "./style.css";
@@ -63,7 +66,10 @@ const sync = new SyncController({
 });
 
 function render(): void {
-  const categories = [...categoryOptions(todos), ...manualCategories].sort((a, b) =>
+  // 拖动中重建列表会扯断拖动；拖完 onDrop → persist → render 会补上这次刷新
+  if (isDragging()) return;
+  // 派生分类与手动新建合并去重：手动分类被赋给条目后会同时出现在两个来源
+  const categories = [...new Set([...categoryOptions(todos), ...manualCategories])].sort((a, b) =>
     a.localeCompare(b, "zh"),
   );
   syncFilter(categories);
@@ -182,6 +188,7 @@ form.addEventListener("submit", (e) => {
   const category = rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
   const todo = createTodo(text);
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
+  todo.order = topOrder(todos); // 新条目置顶：order 取现存最小值减 1
   todos.unshift(todo);
   input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
   persist();
@@ -272,6 +279,37 @@ listEl.addEventListener("change", (e) => {
   persist();
   // 即时到期检查：改日期为过期值 → 立即通知并标记；改分类时 isOverdue 恒为否、自然跳过
   if (updated) void notifyTodoOnce(updated);
+});
+
+// ---------- 拖动排序 ----------
+
+// DOM 里的前后邻条即拖动落点：order 取两者中点（越界取邻条 ±1），其余条目不动，
+// 每次拖动只写一条 → LWW 同步改动面最小。筛选视图下以可见邻条为准（被隐藏条目夹在中间属预期）。
+// 渲染顺序跟数组走，落库同时把数组也重排，否则重渲染会弹回原位。
+attachDragReorder(listEl, {
+  onDrop: (id, prevId, nextId) => {
+    const from = todos.findIndex((t) => t.id === id);
+    if (from < 0) return;
+    const current = todos[from];
+    const prev = prevId != null ? todos.find((t) => t.id === prevId) : undefined;
+    const next = nextId != null ? todos.find((t) => t.id === nextId) : undefined;
+    let order: number;
+    if (prev?.order != null && next?.order != null) order = (prev.order + next.order) / 2;
+    else if (prev?.order != null) order = prev.order + 1;
+    else if (next?.order != null) order = next.order - 1;
+    else order = current.order ?? 0;
+    if (order === current.order) return; // 原位（含 Esc 还原 / 仅剩一条）：不产生写入与同步
+    const rest = todos.filter((t) => t.id !== id);
+    const at =
+      prevId != null
+        ? rest.findIndex((t) => t.id === prevId) + 1
+        : nextId != null
+          ? rest.findIndex((t) => t.id === nextId)
+          : from; // 前后都无邻条：数组位置不变
+    rest.splice(at, 0, withOrder(current, order));
+    todos = rest;
+    persist();
+  },
 });
 
 // ---------- 复合筛选（分类/状态二选一） ----------

@@ -289,7 +289,7 @@ async function gistRequest(
 
 /**
  * 远端条目校验：id/text/createdAt/updatedAt 必填且类型正确，completed/deletedAt 可选但类型须对；
- * category/dueDate/notified 可选：类型或内容非法时按未填写清空，不作为丢弃依据；
+ * category/dueDate/order/notified 可选：类型或内容非法时按未填写/缺失清空，不作为丢弃依据；
  * 脏数据（Gist 被手动改坏等）返回 null 丢弃，防止污染渲染与本地存储。
  */
 function sanitizeRemoteTodo(item: unknown): Todo | null {
@@ -313,6 +313,7 @@ function sanitizeRemoteTodo(item: unknown): Todo | null {
     completed: t.completed ?? false,
     category: normalizeCategory(t.category),
     dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
+    order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
     notified: typeof t.notified === "boolean" ? t.notified : undefined,
   };
 }
@@ -323,10 +324,10 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
   if (!content) return [];
   const data: unknown = JSON.parse(content);
   const { version } = (data ?? {}) as { version?: unknown };
-  // 版本契约：无 version 的历史 payload 与已知版本（v1–v2，须与 gistPayload 同步）照常解析；
+  // 版本契约：无 version 的历史 payload 与已知版本（v1–v3，须与 gistPayload 同步）照常解析；
   // 未来/未知版本号只警告不拒绝，唯一整批放弃条件是 todos 非数组。
-  if (version !== undefined && version !== 1 && version !== 2) {
-    console.warn("[my-tobo] 远端数据版本号未识别（本机支持 v1–v2），仍尝试解析 todos：", version);
+  if (version !== undefined && version !== 1 && version !== 2 && version !== 3) {
+    console.warn("[my-tobo] 远端数据版本号未识别（本机支持 v1–v3），仍尝试解析 todos：", version);
   }
   const todos = (data as { todos?: unknown })?.todos;
   if (!Array.isArray(todos)) return [];
@@ -341,7 +342,7 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
 }
 
 function gistPayload(todos: Todo[]): string {
-  return JSON.stringify({ version: 2, todos: purgeTombstones(todos) });
+  return JSON.stringify({ version: 3, todos: purgeTombstones(todos) });
 }
 
 interface SyncHooks {

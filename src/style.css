@@ -622,6 +622,31 @@ body {
   opacity: 0.85;
 }
 
+/* 拖动排序：整行可抓取（勾选/删除/下拉/日期各自保留自己的光标）；触屏长按触发，禁选中避免拖出文本选区 */
+.todo-item {
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 拖动中：被拖条目浮起带阴影；其余条目让位，不响应 hover */
+.todo-item.is-dragging {
+  position: relative;
+  z-index: 10;
+  background: var(--card);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  cursor: grabbing;
+}
+
+body.is-reordering {
+  cursor: grabbing;
+}
+
+body.is-reordering .todo-item:not(.is-dragging) {
+  pointer-events: none;
+}
+
 /* 圆形勾选框 */
 .todo-toggle {
   flex: none;
@@ -687,6 +712,7 @@ body {
   font-size: 12.5px;
   border-radius: 999px;
   background-position: right 7px center;
+  cursor: pointer; /* 否则继承 .todo-item 的 grab */
 }
 
 /* 截止日期：空值时只显示日历图标，聚焦时展开为完整编辑框 */

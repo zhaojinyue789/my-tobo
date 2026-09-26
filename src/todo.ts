@@ -11,6 +11,8 @@ export interface Todo {
   category?: string;
   /** 截止日期 YYYY-MM-DD，未设置为 undefined */
   dueDate?: string;
+  /** 排序权重：越小越靠前。新条目取现存最小值减 1，拖动取前后邻条中点；随 updatedAt 走 LWW */
+  order?: number;
   /** 过期通知已发送：设备本地 UX 状态；随数据同步但标记时不 bump updatedAt（不参与 LWW） */
   notified?: boolean;
 }
@@ -24,6 +26,8 @@ const CATEGORY_MAX_LENGTH = 20;
 const CATEGORY_FORBIDDEN = /[/\\<>:"|?*\u0000-\u001f\u007f]/;
 /** 一次性迁移标记：category/dueDate 字段引入后，首次加载把迁移结果写回存储并置位，之后不再触发写回 */
 const MIGRATION_KEY_CATEGORY_DUE_DATE = "my-tobo.migrated.category_due_date";
+/** 一次性迁移标记：order 排序字段引入后，首次加载把补齐结果写回存储并置位 */
+const MIGRATION_KEY_ORDER = "my-tobo.migrated.order";
 
 export function isDeleted(todo: Todo): boolean {
   return todo.deletedAt != null;
@@ -78,13 +82,20 @@ export function loadTodos(): Todo[] {
       )
       .map(migrate);
     runStartupMigration(todos);
-    return todos;
+    // 展示顺序统一以 order 为准（存储数组顺序不可信：迁移补 order / 远端旧数据都会打乱）
+    return [...todos].sort(compareDisplay);
   } catch {
     return [];
   }
 }
 
-/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/notified，读取时补齐；新字段非法值按未填写处理，条目保留 */
+/** 展示顺序统一规则：order 升序；缺 order / 并列回退 createdAt 降序。loadTodos 与 mergeTodos 共用 */
+function compareDisplay(a: Todo, b: Todo): number {
+  if (a.order != null && b.order != null && a.order !== b.order) return a.order - b.order;
+  return b.createdAt - a.createdAt;
+}
+
+/** 旧版本数据没有 updatedAt/deletedAt/category/dueDate/order/notified，读取时补齐；新字段非法值按未填写处理，条目保留 */
 function migrate(item: Todo): Todo {
   return {
     ...item,
@@ -92,22 +103,44 @@ function migrate(item: Todo): Todo {
     deletedAt: typeof item.deletedAt === "number" ? item.deletedAt : undefined,
     category: normalizeCategory(item.category),
     dueDate: isValidDueDate(item.dueDate) ? item.dueDate : undefined,
+    order: typeof item.order === "number" && Number.isFinite(item.order) ? item.order : undefined,
     notified: typeof item.notified === "boolean" ? item.notified : false,
   };
 }
 
 /**
- * 一次性迁移收尾：migrate 每次加载都幂等执行，这里只在首次（无标记时）把结果写回存储一次并置位。
+ * 一次性迁移收尾：migrate 每次加载都幂等执行，这里只在首次（任一标记缺失时）把结果写回存储一次并置位。
  * 异常必须就地吞掉——若冒泡到 loadTodos 外层 catch，会把已加载的列表整表变成 []。
  */
 function runStartupMigration(todos: Todo[]): void {
   try {
-    if (localStorage.getItem(MIGRATION_KEY_CATEGORY_DUE_DATE)) return;
+    if (
+      localStorage.getItem(MIGRATION_KEY_CATEGORY_DUE_DATE) &&
+      localStorage.getItem(MIGRATION_KEY_ORDER)
+    ) {
+      return;
+    }
+    ensureOrders(todos);
     saveTodos(todos);
     localStorage.setItem(MIGRATION_KEY_CATEGORY_DUE_DATE, "1");
+    localStorage.setItem(MIGRATION_KEY_ORDER, "1");
   } catch {
     // 标记/写回失败（配额满、只读模式等）：静默忽略，不阻塞加载；下次启动重试
   }
+}
+
+/** 存量条目补 order：按既有展示顺序（createdAt 降序）赋位置序号，只补缺失项；返回是否有补 */
+function ensureOrders(todos: Todo[]): boolean {
+  let changed = false;
+  let i = 0;
+  for (const t of [...todos].sort((a, b) => b.createdAt - a.createdAt)) {
+    if (t.order == null) {
+      t.order = i;
+      changed = true;
+    }
+    i++;
+  }
+  return changed;
 }
 
 export function saveTodos(todos: Todo[]): boolean {
@@ -139,6 +172,7 @@ export function markDeleted(todo: Todo): Todo {
 /**
  * 双端合并：按 id 对齐，逐项按 updatedAt 最后写入胜出；
  * 单端独有的项（含墓碑）直接收编。
+ * 展示顺序：order 升序（拖动排序）；缺 order / 并列回退 createdAt 降序（旧数据与极端并列的兜底）。
  */
 export function mergeTodos(local: Todo[], remote: Todo[]): Todo[] {
   const byId = new Map(local.map((t) => [t.id, t]));
@@ -146,7 +180,21 @@ export function mergeTodos(local: Todo[], remote: Todo[]): Todo[] {
     const l = byId.get(r.id);
     if (!l || r.updatedAt > l.updatedAt) byId.set(r.id, r);
   }
-  return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
+  return [...byId.values()].sort(compareDisplay);
+}
+
+/** 新条目置顶的 order：现存最小值减 1（无条目从 0 起） */
+export function topOrder(todos: Todo[]): number {
+  let min = Infinity;
+  for (const t of todos) {
+    if (t.order != null && t.order < min) min = t.order;
+  }
+  return min === Infinity ? 0 : min - 1;
+}
+
+/** 拖动落点写回：只改被拖条目的 order（最小改动面），bump updatedAt 参与双端 LWW */
+export function withOrder(todo: Todo, order: number): Todo {
+  return { ...todo, order, updatedAt: Date.now() };
 }
 
 export function sameTodos(a: Todo[], b: Todo[]): boolean {
