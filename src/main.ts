@@ -23,6 +23,7 @@ import { setupListInteractions } from "./list-interactions";
 import { setupBatch, syncBatchCategory } from "./batch";
 import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
+import { setupStats } from "./stats";
 import { notifyDueBatch } from "./due-scan";
 import { showUndoToast } from "./toast";
 import { syncDueBanner } from "./banner";
@@ -39,6 +40,10 @@ const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
 const clearAllBtn = document.querySelector<HTMLButtonElement>("#clear-all")!;
+const statsToggleBtn = document.querySelector<HTMLButtonElement>("#stats-toggle")!;
+const statsModal = document.querySelector<HTMLElement>("#stats-modal")!;
+const statsCloseBtn = document.querySelector<HTMLButtonElement>("#stats-close")!;
+const statsBody = document.querySelector<HTMLElement>("#stats-body")!;
 const batchToggleBtn = document.querySelector<HTMLButtonElement>("#batch-toggle")!;
 const batchBar = document.querySelector<HTMLElement>("#batch-bar")!;
 const batchCountEl = document.querySelector<HTMLElement>("#batch-count")!;
@@ -105,6 +110,10 @@ setupBatch(
   render,
 );
 setupBackup(exportBtn, importBtn, importFileInput);
+setupStats(
+  { toggleBtn: statsToggleBtn, modal: statsModal, closeBtn: statsCloseBtn, body: statsBody },
+  () => app.todos,
+);
 setupSyncModal(
   {
     settingsBtn: syncSettingsBtn,

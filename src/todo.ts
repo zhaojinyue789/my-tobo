@@ -29,6 +29,8 @@ export interface Todo {
   notes?: string;
   /** 子任务清单：整组字段随 LWW 同步（组内不做行级合并） */
   subtasks?: Subtask[];
+  /** 完成时刻：completed=true 时有值，取消完成即清空（历史数据无此字段） */
+  completedAt?: number;
   /** 过期/到点通知已发送：设备本地 UX 状态；随数据同步但标记时不 bump updatedAt（不参与 LWW） */
   notified?: boolean;
   /** 「提前 1 天」提醒已发送（同 notified，独立标记） */
@@ -101,7 +103,12 @@ export function nowHM(): string {
 
 /** 本地时区的今天；toISOString() 是 UTC，时区边缘会让“今天”错一天 */
 export function todayISO(): string {
-  const now = new Date();
+  return timestampToISO(Date.now());
+}
+
+/** 时间戳 → 本地时区日期 YYYY-MM-DD（toISOString() 是 UTC，不能直接用） */
+export function timestampToISO(ts: number): string {
+  const now = new Date(ts);
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
@@ -263,6 +270,7 @@ export function cleanTodoFields(t: Todo): Todo {
     order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
     notes: cleanNotes(t.notes),
     subtasks: cleanSubtasks(t.subtasks),
+    completedAt: typeof t.completedAt === "number" && Number.isFinite(t.completedAt) ? t.completedAt : undefined,
     notified: typeof t.notified === "boolean" ? t.notified : undefined,
     reminded: typeof t.reminded === "boolean" ? t.reminded : undefined,
   };

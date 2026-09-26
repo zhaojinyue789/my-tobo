@@ -892,6 +892,14 @@ body.is-reordering .todo-item:not(.is-dragging) {
    备注与子任务：第二行附加区（flex-basis 100% 独占一行）
    ============================================================ */
 
+/* 分类色点：哈希取色，行内与筛选菜单共用 */
+.cat-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
 .todo-extras {
   flex-basis: 100%;
   display: flex;
@@ -1628,6 +1636,149 @@ body.is-reordering .todo-item:not(.is-dragging) {
 
 .modal-backup-label {
   flex: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   统计面板
+   ============================================================ */
+
+.stats-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 4px;
+  background: var(--field);
+  border-radius: var(--radius-control);
+}
+
+.stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stat-card.is-warn .stat-num {
+  color: var(--danger-text);
+}
+
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* 近 7 天完成趋势：简单柱状 */
+.stats-trend {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  height: 92px;
+}
+
+.stats-trend-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stats-trend-bar {
+  width: 60%;
+  max-width: 32px;
+  background: var(--field);
+  border-radius: 4px 4px 2px 2px;
+  transition: height 0.2s;
+}
+
+.stats-trend-bar.has-data {
+  background: var(--accent);
+}
+
+.stats-trend-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* 分类分布：横向占比条 */
+.stats-dist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-dist-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-dist-label {
+  flex: none;
+  width: 88px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-dist-track {
+  flex: 1;
+  height: 10px;
+  background: var(--field);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.stats-dist-fill {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  background: var(--text-muted);
+  border-radius: 999px;
+}
+
+.stats-dist-num {
+  flex: none;
+  min-width: 20px;
+  text-align: right;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.stats-empty {
+  margin: 0;
   font-size: 13px;
   color: var(--text-muted);
 }

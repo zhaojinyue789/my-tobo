@@ -73,6 +73,7 @@
         <span id="todo-count"></span>
         <span class="todo-footer-actions">
           <button id="batch-toggle" class="batch-toggle" type="button">多选</button>
+          <button id="stats-toggle" class="batch-toggle" type="button">统计</button>
           <button id="clear-completed" class="clear-completed" type="button">清除已完成</button>
           <button id="clear-all" class="clear-all" type="button">清除全部</button>
         </span>
@@ -111,6 +112,16 @@
           <button id="export-backup" class="modal-btn" type="button">导出 JSON</button>
           <button id="import-backup" class="modal-btn" type="button">导入并合并</button>
           <input id="import-file" type="file" accept=".json,application/json" hidden />
+        </div>
+      </div>
+    </div>
+
+    <div id="stats-modal" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="stats-modal-title">
+        <h2 id="stats-modal-title" class="modal-title">数据统计</h2>
+        <div id="stats-body" class="stats-body"></div>
+        <div class="modal-actions">
+          <button id="stats-close" class="modal-btn" type="button">关闭</button>
         </div>
       </div>
     </div>

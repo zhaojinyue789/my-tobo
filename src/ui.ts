@@ -69,6 +69,21 @@ export function buildSelectOption(value: string, label: string): HTMLOptionEleme
   return opt;
 }
 
+/**
+ * 分类名 → 稳定颜色：FNV-1a 哈希取色相，避开与危险红过近的区间（0°±15）。
+ * 同名分类在任何设备/主题下颜色一致；未分类无颜色。
+ */
+export function categoryColor(name: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) {
+    hash ^= name.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const hue = Math.abs(hash) % 360;
+  const safeHue = hue < 20 || hue > 340 ? hue + 45 : hue;
+  return `hsl(${safeHue} 62% 52%)`;
+}
+
 export interface ToolbarRefs {
   root: HTMLElement;
   /** 复合筛选按钮：文字显示当前生效筛选，点击开合菜单 */
@@ -237,7 +252,17 @@ export function syncFilterMenu(
     opt.tabIndex = selected ? 0 : -1;
     opt.dataset.kind = kind;
     opt.dataset.value = value;
-    opt.textContent = label;
+    if (kind === "category" && value !== "__uncat__") {
+      const dot = document.createElement("span");
+      dot.className = "cat-dot";
+      dot.style.background = categoryColor(value);
+      dot.setAttribute("aria-hidden", "true");
+      const text = document.createElement("span");
+      text.textContent = label;
+      opt.append(dot, text);
+    } else {
+      opt.textContent = label;
+    }
     return opt;
   };
 
@@ -377,6 +402,14 @@ export function renderList(
 
     const meta = document.createElement("div");
     meta.className = "todo-meta";
+    if (todo.category) {
+      const dot = document.createElement("span");
+      dot.className = "cat-dot";
+      dot.style.background = categoryColor(todo.category);
+      dot.title = todo.category;
+      dot.setAttribute("aria-hidden", "true");
+      meta.append(dot);
+    }
     meta.append(categorySelect);
     if (timeInput) meta.append(timeInput);
     meta.append(dueInput);

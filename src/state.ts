@@ -137,11 +137,20 @@ export function undoSnapshot(snapshot: Todo[]): void {
 }
 
 /** 完成/取消完成；重复任务被完成时按 dueDate 生成下一实例置顶（取消完成不回收已生成的实例）。
- *  返回是否有变更（调用方据此决定是否 persist）。 */
+ *  完成同时记录 completedAt 供统计；返回是否有变更（调用方据此决定是否 persist）。 */
 export function setCompleted(id: string, completed: boolean): boolean {
   const t = app.todos.find((x) => x.id === id);
   if (!t || t.completed === completed) return false;
-  app.todos = app.todos.map((x) => (x.id === id ? { ...x, completed, updatedAt: Date.now() } : x));
+  app.todos = app.todos.map((x) =>
+    x.id === id
+      ? {
+          ...x,
+          completed,
+          completedAt: completed ? Date.now() : undefined,
+          updatedAt: Date.now(),
+        }
+      : x,
+  );
   if (completed && t.recurrence && t.dueDate) {
     const now = Date.now();
     app.todos.unshift({
