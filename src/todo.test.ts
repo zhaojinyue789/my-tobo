@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceDate,
   createTodo,
   isDeleted,
+  isDueTomorrow,
   isOverdue,
   isValidCategory,
   isValidDueDate,
+  isValidDueTime,
   markDeleted,
   mergeTodos,
   normalizeCategory,
@@ -145,5 +148,48 @@ describe("墓碑与比较", () => {
     expect(todo.text).toBe("hi");
     expect(todo.id).toBeTruthy();
     expect(todo.createdAt).toBe(todo.updatedAt);
+  });
+});
+
+describe("advanceDate / isDueTomorrow（重复与提前提醒）", () => {
+  it("daily +1 天、weekly +7 天", () => {
+    expect(advanceDate("2026-09-26", "daily")).toBe("2026-09-27");
+    expect(advanceDate("2026-09-26", "weekly")).toBe("2026-10-03");
+  });
+  it("monthly 月末收紧：1 月 31 日 → 2 月 28/29 日", () => {
+    expect(advanceDate("2026-01-31", "monthly")).toBe("2026-02-28");
+    expect(advanceDate("2024-01-31", "monthly")).toBe("2024-02-29"); // 闰年
+    expect(advanceDate("2026-01-15", "monthly")).toBe("2026-02-15");
+  });
+  it("isDueTomorrow 只认明天", () => {
+    const t1 = { ...t(), dueDate: "2026-09-27" };
+    expect(isDueTomorrow(t1, "2026-09-26")).toBe(true);
+    expect(isDueTomorrow(t1, "2026-09-25")).toBe(false);
+    expect(isDueTomorrow({ ...t(), completed: true, dueDate: "2026-09-27" }, "2026-09-26")).toBe(false);
+    expect(isDueTomorrow({ ...t(), deletedAt: 1, dueDate: "2026-09-27" }, "2026-09-26")).toBe(false);
+  });
+  it("isOverdue 时刻感知：当天到点即过期", () => {
+    expect(isOverdue({ ...t(), dueDate: "2026-09-26" }, "2026-09-26", "10:00")).toBe(false);
+    expect(isOverdue({ ...t(), dueDate: "2026-09-26", dueTime: "09:30" }, "2026-09-26", "10:00")).toBe(true);
+    expect(isOverdue({ ...t(), dueDate: "2026-09-26", dueTime: "10:00" }, "2026-09-26", "10:00")).toBe(true);
+    expect(isOverdue({ ...t(), dueDate: "2026-09-26", dueTime: "23:00" }, "2026-09-26", "10:00")).toBe(false);
+  });
+  it("置顶条目排在最前（mergeTodos 展示顺序）", () => {
+    const merged = mergeTodos(
+      [
+        t({ id: "a", order: 1 }),
+        t({ id: "b", order: 2, pinned: true }),
+        t({ id: "c", order: 3, pinned: true }),
+      ],
+      [],
+    );
+    expect(merged.map((x) => x.id)).toEqual(["b", "c", "a"]);
+  });
+  it("isValidDueTime 校验", () => {
+    expect(isValidDueTime("09:30")).toBe(true);
+    expect(isValidDueTime("23:59")).toBe(true);
+    expect(isValidDueTime("24:00")).toBe(false);
+    expect(isValidDueTime("9:30")).toBe(false);
+    expect(isValidDueTime(undefined)).toBe(false);
   });
 });

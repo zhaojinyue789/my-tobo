@@ -1,14 +1,21 @@
 import {
+  advanceDate,
   createTodo,
+  deletedRecently,
   isDeleted,
+  isDueTomorrow,
   isOverdue,
   isValidCategory,
   isValidDueDate,
+  isValidDueTime,
   loadTodos,
   markDeleted,
+  mergeTodos,
   normalizeCategory,
   orderBetween,
+  RECURRENCES,
   saveTodos,
+  todayISO,
   topOrder,
   withOrder,
   type Todo,
@@ -24,19 +31,30 @@ import {
   type View,
 } from "./ui";
 import { attachDragReorder, isDragging } from "./drag";
-import { ensurePermission, notifyTodoDue } from "./notify";
-import { SyncController, loadSyncConfig, loadSyncGistId, type SyncStatus } from "./sync";
+import { ensurePermission, notifyTodoDue, notifyTodoTomorrow } from "./notify";
+import { SyncController, loadSyncConfig, loadSyncGistId, sanitizeRemoteTodo, type SyncStatus } from "./sync";
 import "./style.css";
 
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const { filterButton, filterMenu, newCategoryInput, addCategoryBtn, categoryHint } =
+const { filterButton, filterMenu, searchInput, newCategoryInput, addCategoryBtn, categoryHint } =
   buildToolbar(listEl);
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
 const clearAllBtn = document.querySelector<HTMLButtonElement>("#clear-all")!;
+const batchToggleBtn = document.querySelector<HTMLButtonElement>("#batch-toggle")!;
+const batchBar = document.querySelector<HTMLElement>("#batch-bar")!;
+const batchCountEl = document.querySelector<HTMLElement>("#batch-count")!;
+const batchAllBtn = document.querySelector<HTMLButtonElement>("#batch-all")!;
+const batchDoneBtn = document.querySelector<HTMLButtonElement>("#batch-done")!;
+const batchDeleteBtn = document.querySelector<HTMLButtonElement>("#batch-delete")!;
+const batchCategory = document.querySelector<HTMLSelectElement>("#batch-category")!;
+const batchExitBtn = document.querySelector<HTMLButtonElement>("#batch-exit")!;
+const exportBtn = document.querySelector<HTMLButtonElement>("#export-backup")!;
+const importBtn = document.querySelector<HTMLButtonElement>("#import-backup")!;
+const importFileInput = document.querySelector<HTMLInputElement>("#import-file")!;
 
 const syncDot = document.querySelector<HTMLElement>("#sync-dot")!;
 const syncText = document.querySelector<HTMLElement>("#sync-text")!;
@@ -58,6 +76,11 @@ let todos: Todo[] = loadTodos();
 let view: View = { category: "__all__", status: "all" };
 /** 行内编辑中的条目 id：编辑期间 render 跳过列表重建，防止编辑框被打断 */
 let editingId: string | null = null;
+/** 文本搜索词（实时过滤当前视图，大小写不敏感） */
+let searchTerm = "";
+/** 批量模式与已选条目 */
+let batchMode = false;
+const selectedIds = new Set<string>();
 
 const MANUAL_CATEGORIES_KEY = "my-tobo.manual-categories";
 
@@ -94,6 +117,14 @@ const sync = new SyncController({
   onStatus: renderSyncStatus,
 });
 
+/** 当前视图可见条目：视图过滤 + 文本搜索（拖动/键盘排序/批量共用同一份可见集） */
+function visibleTodos(): Todo[] {
+  const list = applyFilter(todos, view);
+  const term = searchTerm.trim().toLowerCase();
+  if (!term) return list;
+  return list.filter((t) => t.text.toLowerCase().includes(term));
+}
+
 function render(): void {
   // 拖动中重建列表会扯断拖动；拖完 onDrop → persist → render 会补上这次刷新
   if (isDragging()) return;
@@ -103,24 +134,39 @@ function render(): void {
   );
   syncFilter(categories);
   syncNewTodoCategory(categories);
+  syncBatchCategory(categories);
+
+  const deletedView = view.status === "deleted";
+  form.classList.toggle("hidden", deletedView);
+  batchBar.classList.toggle("hidden", !batchMode || deletedView);
+  footer.classList.toggle("hidden", deletedView || batchMode);
 
   // 行内编辑中不重建列表（编辑框会被打断）；编辑结束经 persist/render 补上
   if (editingId == null) {
     renderList(
       listEl,
-      applyFilter(todos, view),
-      todos.some((t) => !isDeleted(t))
-        ? "该筛选下暂无待办"
-        : "这里空空如也，添加一条待办吧～",
+      visibleTodos(),
+      deletedView
+        ? "回收站是空的"
+        : todos.some((t) => !isDeleted(t))
+          ? "该筛选下暂无待办"
+          : "这里空空如也，添加一条待办吧～",
       categories,
+      { deleted: deletedView, batch: batchMode, selected: selectedIds },
     );
   }
 
   const live = todos.filter((t) => !isDeleted(t));
-  const remaining = live.filter((t) => !t.completed).length;
-  countEl.textContent = `剩余 ${remaining} 项未完成`;
-  footer.classList.toggle("hidden", live.length === 0);
-  clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
+  const deletedCount = todos.filter((t) => deletedRecently(t)).length;
+  if (deletedView) {
+    countEl.textContent = `回收站 ${deletedCount} 项，保留 30 天后自动清除`;
+  } else {
+    const remaining = live.filter((t) => !t.completed).length;
+    countEl.textContent = `剩余 ${remaining} 项未完成`;
+    clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
+    batchToggleBtn.classList.toggle("hidden", live.length === 0);
+  }
+  batchCountEl.textContent = `已选 ${selectedIds.size} 项`;
 }
 
 /** 复合筛选同步：分类消失（最后一条被删）时回退未筛选，再按当前视图态刷新按钮与菜单 */
@@ -158,19 +204,30 @@ async function notifyTodoOnce(todo: Todo): Promise<void> {
   persist();
 }
 
-/** 批量扫描：全部过期未通知条目各发一条；单条失败跳过，成功者统一落盘一次 */
-async function notifyOverdueBatch(): Promise<void> {
-  const targets = todos.filter((t) => isOverdue(t) && !t.notified);
-  if (targets.length === 0) return;
+/** 分钟级扫描：到期/过期通知（notified）+ 提前 1 天提醒（reminded）；
+ *  权限未授予/发送失败不标记，下次扫描重试；标记均不 bump updatedAt（设备本地 UX 状态，不参与 LWW） */
+async function notifyDueBatch(): Promise<void> {
+  const due = todos.filter((t) => isOverdue(t) && !t.notified);
+  const ahead = todos.filter((t) => isDueTomorrow(t) && !t.reminded);
+  if (due.length === 0 && ahead.length === 0) return;
   if (!(await ensurePermission())) return;
   let changed = false;
-  for (const todo of targets) {
+  for (const todo of due) {
     try {
       await notifyTodoDue(todo);
     } catch {
       continue;
     }
     todos = todos.map((t) => (t.id === todo.id ? { ...t, notified: true } : t));
+    changed = true;
+  }
+  for (const todo of ahead) {
+    try {
+      await notifyTodoTomorrow(todo);
+    } catch {
+      continue;
+    }
+    todos = todos.map((t) => (t.id === todo.id ? { ...t, reminded: true } : t));
     changed = true;
   }
   if (changed) persist();
@@ -219,16 +276,24 @@ form.addEventListener("submit", (e) => {
   const rawCategory = newTodoCategory.value;
   const category = rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
   const rawDue = newTodoDue.value;
+  const rawTime = newTodoTime.value;
+  const rawRepeat = newTodoRepeat.value;
   const todo = createTodo(text);
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
   if (isValidDueDate(rawDue)) todo.dueDate = rawDue;
+  if (todo.dueDate && isValidDueTime(rawTime)) todo.dueTime = rawTime; // 时刻依赖日期才有意义
+  if (rawRepeat === "daily" || rawRepeat === "weekly" || rawRepeat === "monthly") {
+    todo.recurrence = rawRepeat;
+  }
   todo.order = topOrder(todos); // 新条目置顶：order 取现存最小值减 1
   todos.unshift(todo);
   input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
-  newTodoDue.value = ""; // 日期每次清空：通常一条一个截止日期
+  newTodoDue.value = ""; // 日期/时刻每次清空：通常一条一个截止时间
   newTodoDue.classList.add("is-empty");
+  newTodoTime.value = "";
+  newTodoRepeat.value = "";
   persist();
-  // 即时到期检查：新建即带过期日期 → 立即通知并标记
+  // 即时到期检查：新建即带过期日期/时刻 → 立即通知并标记
   void notifyTodoOnce(todo);
 });
 
@@ -263,6 +328,32 @@ newTodoDue.addEventListener("change", () => {
   newTodoDue.classList.toggle("is-empty", !newTodoDue.value);
 });
 
+// 新增表单的截止时刻与重复规则（时刻仅在选了日期后有意义，提交时校验依赖）
+const newTodoTime = document.createElement("input");
+newTodoTime.type = "time";
+newTodoTime.id = "new-todo-time";
+newTodoTime.className = "new-todo-time";
+newTodoTime.setAttribute("aria-label", "新待办的截止时刻");
+form.insertBefore(
+  newTodoTime,
+  form.querySelector<HTMLButtonElement>("button[type=submit]"),
+);
+
+const newTodoRepeat = document.createElement("select");
+newTodoRepeat.id = "new-todo-repeat";
+newTodoRepeat.className = "new-todo-repeat";
+newTodoRepeat.setAttribute("aria-label", "重复规则");
+newTodoRepeat.append(
+  buildSelectOption("", "不重复"),
+  ...RECURRENCES.map((r) =>
+    buildSelectOption(r, r === "daily" ? "每天" : r === "weekly" ? "每周" : "每月"),
+  ),
+);
+form.insertBefore(
+  newTodoRepeat,
+  form.querySelector<HTMLButtonElement>("button[type=submit]"),
+);
+
 /** 选项 = 未分类("") + 派生分类 + 手动新建；保留当前选中（连续录入），无则按视图态默认 */
 function syncNewTodoCategory(categories: string[]): void {
   const previous = newTodoCategory.value;
@@ -281,19 +372,56 @@ function syncNewTodoCategory(categories: string[]): void {
   newTodoCategory.value = previous && categories.includes(previous) ? previous : fallback;
 }
 
+/** 完成/取消完成；重复任务被完成时按 dueDate 生成下一实例置顶（取消完成不回收已生成的实例） */
+function setCompleted(id: string, completed: boolean): boolean {
+  const t = todos.find((x) => x.id === id);
+  if (!t || t.completed === completed) return false;
+  todos = todos.map((x) => (x.id === id ? { ...x, completed, updatedAt: Date.now() } : x));
+  if (completed && t.recurrence && t.dueDate) {
+    const now = Date.now();
+    todos.unshift({
+      id: crypto.randomUUID(),
+      text: t.text,
+      category: t.category,
+      dueDate: advanceDate(t.dueDate, t.recurrence),
+      dueTime: t.dueTime,
+      recurrence: t.recurrence,
+      completed: false,
+      createdAt: now,
+      updatedAt: now,
+      order: topOrder(todos),
+    });
+  }
+  return true;
+}
+
 listEl.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
   const item = target.closest<HTMLElement>(".todo-item");
   if (!item) return;
   const id = item.dataset.id;
   if (target.classList.contains("todo-toggle")) {
-    todos = todos.map((t) =>
-      t.id === id ? { ...t, completed: !t.completed, updatedAt: Date.now() } : t,
-    );
+    if (id) setCompleted(id, !todos.find((t) => t.id === id)?.completed);
   } else if (target.classList.contains("todo-delete")) {
     todos = todos.map((t) => (t.id === id ? markDeleted(t) : t));
   } else if (target.classList.contains("todo-text")) {
     beginEdit(item, id);
+    return;
+  } else if (target.classList.contains("todo-pin")) {
+    todos = todos.map((t) => (t.id === id ? { ...t, pinned: !t.pinned, updatedAt: Date.now() } : t));
+  } else if (target.classList.contains("todo-restore")) {
+    // 恢复 = 撤销墓碑（updatedAt 更新会按 LWW 复活远端同条目）；重置两个通知标记防误报
+    const now = Date.now();
+    todos = todos.map((t) =>
+      t.id === id && isDeleted(t)
+        ? { ...t, deletedAt: undefined, notified: false, reminded: false, updatedAt: now }
+        : t,
+    );
+  } else if (target.classList.contains("todo-check")) {
+    if (!id) return;
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    render();
     return;
   } else {
     return;
@@ -370,7 +498,16 @@ listEl.addEventListener("change", (e) => {
     if ((current.dueDate ?? undefined) === (next ?? undefined)) return;
     todos = todos.map((t) => {
       if (t.id !== current.id) return t;
-      updated = { ...t, dueDate: next, updatedAt: Date.now() };
+      // 清日期时连时刻一起清（时刻依赖日期才有意义）
+      updated = { ...t, dueDate: next, dueTime: next ? t.dueTime : undefined, updatedAt: Date.now() };
+      return updated;
+    });
+  } else if (target.classList.contains("todo-due-time")) {
+    const next = isValidDueTime(target.value) ? target.value : undefined;
+    if ((current.dueTime ?? undefined) === (next ?? undefined)) return;
+    todos = todos.map((t) => {
+      if (t.id !== current.id) return t;
+      updated = { ...t, dueTime: next, updatedAt: Date.now() };
       return updated;
     });
   } else {
@@ -408,7 +545,7 @@ function applyMove(id: string, prevId: string | null, nextId: string | null): vo
 
 attachDragReorder(listEl, {
   onDrop: (id, prevId, nextId) => {
-    if (id) applyMove(id, prevId, nextId);
+    if (id && view.status !== "deleted") applyMove(id, prevId, nextId); // 回收站内不排序
   },
 });
 
@@ -416,11 +553,12 @@ attachDragReorder(listEl, {
 // 列表重建后把焦点放回同一条目的同类控件
 listEl.addEventListener("keydown", (e) => {
   if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+  if (view.status === "deleted") return; // 回收站内不排序
   const item = (e.target as HTMLElement).closest<HTMLElement>(".todo-item");
   const id = item?.dataset.id;
   if (!item || !id) return;
   e.preventDefault();
-  const visible = applyFilter(todos, view);
+  const visible = visibleTodos();
   const i = visible.findIndex((t) => t.id === id);
   if (i < 0) return;
   const up = e.key === "ArrowUp";
@@ -454,7 +592,8 @@ filterButton.addEventListener("click", () => {
   filterButton.setAttribute("aria-expanded", String(open));
 });
 
-// 选项：设置视图态后 rAF 重渲染；同项再点 = 取消筛选恢复「全部待办」
+// 选项：设置视图态后立即重渲染；同项再点 = 取消筛选恢复「全部待办」
+// （不用 rAF：后台/无焦点面板会暂停 rAF，导致切筛选后界面不刷新）
 filterMenu.addEventListener("click", (e) => {
   const opt = (e.target as HTMLElement).closest<HTMLElement>("[data-kind]");
   if (!opt) return;
@@ -470,7 +609,7 @@ filterMenu.addEventListener("click", (e) => {
       ? { category: value, status: "all" }
       : { category: "__all__", status: value as Filter };
   closeFilterMenu();
-  requestAnimationFrame(render);
+  render();
 });
 
 // 键盘可达：选项获得焦点时 Enter/Space 视同点击
@@ -491,6 +630,130 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeFilterMenu();
+});
+
+// ---------- 文本搜索 ----------
+
+searchInput.addEventListener("input", () => {
+  searchTerm = searchInput.value;
+  render();
+});
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  e.stopPropagation(); // 不触发全局 Esc（只关筛选菜单）的语义混叠
+  searchInput.value = "";
+  searchTerm = "";
+  render();
+  searchInput.blur();
+});
+// Ctrl/Cmd+F 聚焦搜索
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  }
+});
+
+// ---------- 批量操作 ----------
+
+/** 批量改分类的下拉：每次渲染同步选项（未选中的占位值 ""） */
+function syncBatchCategory(categories: string[]): void {
+  const previous = batchCategory.value;
+  batchCategory.replaceChildren(buildSelectOption("", "改分类…"));
+  for (const name of categories) batchCategory.append(buildSelectOption(name, name));
+  batchCategory.value = previous && categories.includes(previous) ? previous : "";
+}
+
+batchToggleBtn.addEventListener("click", () => {
+  batchMode = true;
+  selectedIds.clear();
+  render();
+});
+batchExitBtn.addEventListener("click", () => {
+  batchMode = false;
+  selectedIds.clear();
+  render();
+});
+batchAllBtn.addEventListener("click", () => {
+  const visible = visibleTodos();
+  const allSelected = visible.length > 0 && visible.every((t) => selectedIds.has(t.id));
+  selectedIds.clear();
+  if (!allSelected) for (const t of visible) selectedIds.add(t.id);
+  render();
+});
+batchDoneBtn.addEventListener("click", () => {
+  let changed = false;
+  for (const id of [...selectedIds]) changed = setCompleted(id, true) || changed;
+  if (changed) {
+    selectedIds.clear();
+    persist();
+  }
+});
+batchDeleteBtn.addEventListener("click", () => {
+  if (selectedIds.size === 0) return;
+  const ids = new Set(selectedIds);
+  todos = todos.map((t) => (ids.has(t.id) && !isDeleted(t) ? markDeleted(t) : t));
+  selectedIds.clear();
+  persist();
+});
+batchCategory.addEventListener("change", () => {
+  const next = normalizeCategory(batchCategory.value);
+  if (!next || selectedIds.size === 0) return;
+  const ids = new Set(selectedIds);
+  todos = todos.map((t) =>
+    ids.has(t.id) && !isDeleted(t) && t.category !== next
+      ? { ...t, category: next, updatedAt: Date.now() }
+      : t,
+  );
+  batchCategory.value = "";
+  selectedIds.clear();
+  persist();
+});
+
+// ---------- 导出 / 导入本地备份 ----------
+
+exportBtn.addEventListener("click", () => {
+  const payload = {
+    version: 4,
+    exportedAt: new Date().toISOString(),
+    todos, // 含墓碑：备份保真，导入端按 LWW 合并
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `my-tobo-backup-${todayISO()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+importBtn.addEventListener("click", () => importFileInput.click());
+importFileInput.addEventListener("change", () => {
+  const file = importFileInput.files?.[0];
+  importFileInput.value = ""; // 允许重复选择同一文件
+  if (!file) return;
+  void (async () => {
+    try {
+      const data: unknown = JSON.parse(await file.text());
+      // 兼容两种格式：gistPayload 结构 {version, todos} 或裸数组
+      const raw = Array.isArray(data)
+        ? data
+        : typeof data === "object" && data !== null && Array.isArray((data as { todos?: unknown }).todos)
+          ? (data as { todos: unknown[] }).todos
+          : null;
+      if (!raw) throw new Error("文件里没有待办数组");
+      const imported = raw
+        .map(sanitizeRemoteTodo)
+        .filter((t): t is Todo => t !== null);
+      if (imported.length === 0) throw new Error("没有可导入的有效条目");
+      todos = mergeTodos(loadTodos(), imported);
+      persist();
+      alert(`已导入 ${imported.length} 条（按修改时间合并，未覆盖现有改动）`);
+    } catch (err) {
+      alert(`导入失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  })();
 });
 
 // 新建分类：不产生独立实体，仅加入内存集合；空值/重复拒绝
@@ -609,19 +872,19 @@ gistDisconnectBtn.addEventListener("click", () => {
 input.focus();
 render();
 // 启动批量过期通知：N 条过期未通知各发一条；权限未授予/失败静默降级
-void notifyOverdueBatch();
-// 运行中定期扫描：应用长期开着跨天后也能报过期（每小时一次 + 切回前台时）
-const OVERDUE_POLL_MS = 60 * 60 * 1000;
-setInterval(() => void notifyOverdueBatch(), OVERDUE_POLL_MS);
+void notifyDueBatch();
+// 运行中分钟级扫描：跨天报过期、到点报到期、前一天提醒（应用长期开着也不漏）
+const DUE_POLL_MS = 60 * 1000;
+setInterval(() => void notifyDueBatch(), DUE_POLL_MS);
 // 启动即拉取一次远端（未配置时静默显示“未开启同步”）
 void sync.syncNow();
 // 自动同步循环：30 秒轮询 + 失败退避重试
 sync.startAutoSync();
-// 窗口回到前台立即拉一次（手机切回 App、电脑切回窗口时感知另一端改动），顺带扫过期
+// 窗口回到前台立即拉一次（手机切回 App、电脑切回窗口时感知另一端改动），顺带扫到期
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     void sync.syncNow();
-    void notifyOverdueBatch();
+    void notifyDueBatch();
   }
 });
 // 网络恢复立即同步
@@ -632,4 +895,32 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("./sw.js").catch(() => {
     /* 注册失败不影响功能 */
   });
+}
+
+// 桌面快速添加：全局快捷键 Alt+Shift+T 唤起/隐藏窗口并聚焦输入框（仅 Tauri 端，浏览器无此 API）
+if ("__TAURI_INTERNALS__" in window) {
+  void (async () => {
+    try {
+      const [{ register }, { getCurrentWindow }] = await Promise.all([
+        import("@tauri-apps/plugin-global-shortcut"),
+        import("@tauri-apps/api/window"),
+      ]);
+      const win = getCurrentWindow();
+      await register("Alt+Shift+T", async () => {
+        try {
+          if (await win.isVisible()) {
+            await win.hide();
+          } else {
+            await win.show();
+            await win.setFocus();
+            input.focus();
+          }
+        } catch {
+          /* 窗口操作失败静默 */
+        }
+      });
+    } catch (err) {
+      console.warn("[my-tobo] 全局快捷键注册失败（不影响其他功能）：", err);
+    }
+  })();
 }

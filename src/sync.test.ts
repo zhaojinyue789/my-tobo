@@ -45,18 +45,41 @@ describe("sanitizeRemoteTodo（远端条目校验）", () => {
       ...base,
       category: " 工作 ",
       dueDate: "2026-09-26",
+      dueTime: "09:30",
+      recurrence: "weekly",
+      pinned: true,
       order: -3.5,
       notified: true,
+      reminded: true,
       completed: true,
       deletedAt: 99,
     });
     expect(out).toMatchObject({
       category: "工作",
       dueDate: "2026-09-26",
+      dueTime: "09:30",
+      recurrence: "weekly",
+      pinned: true,
       order: -3.5,
       notified: true,
+      reminded: true,
       completed: true,
       deletedAt: 99,
     });
+  });
+
+  it("新字段（dueTime/recurrence/pinned/reminded）非法值清洗不丢条", () => {
+    const out = sanitizeRemoteTodo({
+      ...base,
+      dueTime: "25:99",
+      recurrence: "yearly",
+      pinned: "yes",
+      reminded: 1,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.dueTime).toBeUndefined();
+    expect(out!.recurrence).toBeUndefined();
+    expect(out!.pinned).toBeUndefined();
+    expect(out!.reminded).toBeUndefined();
   });
 });

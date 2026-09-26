@@ -1,4 +1,15 @@
-import { isValidDueDate, loadTodos, mergeTodos, normalizeCategory, purgeTombstones, saveTodos, sameTodos, type Todo } from "./todo";
+import {
+  isValidDueDate,
+  isValidDueTime,
+  isRecurrence,
+  loadTodos,
+  mergeTodos,
+  normalizeCategory,
+  purgeTombstones,
+  saveTodos,
+  sameTodos,
+  type Todo,
+} from "./todo";
 
 export interface SyncConfig {
   gistId: string;
@@ -9,6 +20,8 @@ export interface SyncConfig {
 const CONFIG_KEY = "my-tobo.sync";
 const LAST_SYNC_KEY = "my-tobo.sync.lastSync";
 const GIST_FILENAME = "my-tobo.json";
+/** 滚动备份文件：每次覆盖主文件前，把远端上一版正文存到这里（同一 Gist 内），坏合并可手工回滚 */
+const BACKUP_FILENAME = "my-tobo.backup.json";
 const API = "https://api.github.com";
 /** 本地变更后的防抖推送延时 */
 const DEBOUNCE_MS = 3000;
@@ -314,8 +327,12 @@ export function sanitizeRemoteTodo(item: unknown): Todo | null {
     completed: t.completed ?? false,
     category: normalizeCategory(t.category),
     dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
+    dueTime: isValidDueTime(t.dueTime) ? t.dueTime : undefined,
+    recurrence: isRecurrence(t.recurrence) ? t.recurrence : undefined,
+    pinned: t.pinned === true ? true : undefined,
     order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
     notified: typeof t.notified === "boolean" ? t.notified : undefined,
+    reminded: typeof t.reminded === "boolean" ? t.reminded : undefined,
   };
 }
 
@@ -325,10 +342,10 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
   if (!content) return [];
   const data: unknown = JSON.parse(content);
   const { version } = (data ?? {}) as { version?: unknown };
-  // 版本契约：无 version 的历史 payload 与已知版本（v1–v3，须与 gistPayload 同步）照常解析；
+  // 版本契约：无 version 的历史 payload 与已知版本（v1–v4，须与 gistPayload 同步）照常解析；
   // 未来/未知版本号只警告不拒绝，唯一整批放弃条件是 todos 非数组。
-  if (version !== undefined && version !== 1 && version !== 2 && version !== 3) {
-    console.warn("[my-tobo] 远端数据版本号未识别（本机支持 v1–v3），仍尝试解析 todos：", version);
+  if (version !== undefined && version !== 1 && version !== 2 && version !== 3 && version !== 4) {
+    console.warn("[my-tobo] 远端数据版本号未识别（本机支持 v1–v4），仍尝试解析 todos：", version);
   }
   const todos = (data as { todos?: unknown })?.todos;
   if (!Array.isArray(todos)) return [];
@@ -343,7 +360,7 @@ function parseRemoteTodos(gist: Record<string, unknown>): Todo[] {
 }
 
 function gistPayload(todos: Todo[]): string {
-  return JSON.stringify({ version: 3, todos: purgeTombstones(todos) });
+  return JSON.stringify({ version: 4, todos: purgeTombstones(todos) });
 }
 
 interface SyncHooks {
@@ -427,7 +444,15 @@ export class SyncController {
 
       // 远端与合并结果不同则推回；本地与合并结果不同则落库刷新
       if (!sameTodos(merged, remote)) {
-        await gistRequest(cfg, "PATCH", { files: { [GIST_FILENAME]: { content: gistPayload(merged) } } });
+        // 滚动备份：覆盖主文件前，把远端上一版正文一起写入备份文件（首同步无上一版则跳过）
+        const files: Record<string, { content: string }> = {
+          [GIST_FILENAME]: { content: gistPayload(merged) },
+        };
+        const previousContent = (remoteGist.files as Record<string, { content?: string }> | undefined)?.[
+          GIST_FILENAME
+        ]?.content;
+        if (previousContent) files[BACKUP_FILENAME] = { content: previousContent };
+        await gistRequest(cfg, "PATCH", { files });
       }
       // PATCH 往返期间用户可能又改了本地：写回前重读一次再合并，
       // 避免用过期快照覆盖用户新输入（否则新待办会凭空消失）

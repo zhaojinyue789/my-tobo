@@ -51,9 +51,20 @@
         <button type="submit" class="btn btn-primary todo-add">添加</button>
       </form>
       <ul id="todo-list" class="todo-list"></ul>
+      <div id="batch-bar" class="batch-bar hidden">
+        <span id="batch-count" class="batch-count"></span>
+        <span class="batch-actions">
+          <button id="batch-all" class="batch-btn" type="button">全选</button>
+          <button id="batch-done" class="batch-btn" type="button">完成</button>
+          <button id="batch-delete" class="batch-btn danger" type="button">删除</button>
+          <select id="batch-category" class="batch-category" aria-label="批量改分类"></select>
+          <button id="batch-exit" class="batch-btn" type="button">退出多选</button>
+        </span>
+      </div>
       <footer id="todo-footer" class="todo-footer hidden">
         <span id="todo-count"></span>
         <span class="todo-footer-actions">
+          <button id="batch-toggle" class="batch-toggle" type="button">多选</button>
           <button id="clear-completed" class="clear-completed" type="button">清除已完成</button>
           <button id="clear-all" class="clear-all" type="button">清除全部</button>
         </span>
@@ -86,6 +97,12 @@
           <button id="gist-save" class="modal-btn" type="button">保存并连接</button>
           <button id="gist-disconnect" class="modal-btn danger" type="button">断开同步</button>
           <button id="gist-close" class="modal-btn" type="button">关闭</button>
+        </div>
+        <div class="modal-backup">
+          <span class="modal-backup-label">本地备份</span>
+          <button id="export-backup" class="modal-btn" type="button">导出 JSON</button>
+          <button id="import-backup" class="modal-btn" type="button">导入并合并</button>
+          <input id="import-file" type="file" accept=".json,application/json" hidden />
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
-import { isDeleted, isOverdue, type Todo } from "./todo";
+import { deletedRecently, isDeleted, isOverdue, type Todo } from "./todo";
 
-export type Filter = "all" | "active" | "completed";
+export type Filter = "all" | "active" | "completed" | "deleted";
 
 /** 分类筛选值：__all__=全部、__uncat__=未分类，其余为具体分类名（已归一化） */
 export type CategoryFilter = "__all__" | "__uncat__" | string;
@@ -18,10 +18,11 @@ export function filterTodos(todos: Todo[], filter: Filter): Todo[] {
 
 /**
  * 视图过滤：输入全量列表（含墓碑），输出当前视图可见条目（保持原顺序）。
- * 契约：纯函数；已删条目恒不可见；不改数据、不写存储、不触发同步。
- * 复杂度 O(N)：复用 filterTodos 做状态过滤，再做一次分类过滤。
+ * 契约：纯函数；"deleted" 视图只看保留期内的墓碑（回收站）；其余视图已删条目恒不可见；
+ * 不改数据、不写存储、不触发同步。复杂度 O(N)。
  */
 export function applyFilter(todos: Todo[], v: View): Todo[] {
+  if (v.status === "deleted") return todos.filter(deletedRecently);
   const live = filterTodos(todos, v.status);
   if (v.category === "__all__") return live;
   if (v.category === "__uncat__") return live.filter((t) => t.category == null);
@@ -53,6 +54,8 @@ export interface ToolbarRefs {
   filterButton: HTMLButtonElement;
   /** 复合筛选菜单（选项每次 render 由 syncFilterMenu 重建） */
   filterMenu: HTMLElement;
+  /** 文本搜索框（实时过滤当前视图） */
+  searchInput: HTMLInputElement;
   newCategoryInput: HTMLInputElement;
   addCategoryBtn: HTMLButtonElement;
   /** 新建分类的反馈行（空值/重复/成功提示） */
@@ -91,6 +94,15 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
 
   filterWrap.append(filterButton, filterMenu);
 
+  // 文本搜索：实时过滤当前视图（Ctrl+F 聚焦由 main.ts 绑定）
+  const searchInput = document.createElement("input");
+  searchInput.id = "todo-search";
+  searchInput.className = "search-input";
+  searchInput.type = "search";
+  searchInput.placeholder = "搜索待办…";
+  searchInput.maxLength = 50;
+  searchInput.setAttribute("aria-label", "搜索待办");
+
   // 「+ 新建分类」触发器：链接样式常驻筛选行右侧，默认收起不占行
   const trigger = document.createElement("button");
   trigger.className = "cat-trigger";
@@ -104,7 +116,7 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   categoryHint.className = "category-hint hidden";
   categoryHint.setAttribute("role", "status");
   // 提示放在筛选行内而非编辑区里：编辑区自动收起后「已添加」仍可见
-  filters.append(filterWrap, trigger, categoryHint);
+  filters.append(filterWrap, searchInput, trigger, categoryHint);
 
   // 行内编辑区：默认收起（0 高度），点击触发器后在下方滑出输入框 + 确定按钮
   const editorWrap = document.createElement("div");
@@ -167,7 +179,7 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
 
   root.append(filters, editorWrap);
   before.before(root);
-  return { root, filterButton, filterMenu, newCategoryInput, addCategoryBtn, categoryHint };
+  return { root, filterButton, filterMenu, searchInput, newCategoryInput, addCategoryBtn, categoryHint };
 }
 
 /** 复合筛选同步：按当前视图态重建菜单选项、标记选中项并更新按钮文字 */
@@ -214,6 +226,7 @@ export function syncFilterMenu(
     group("状态"),
     option("status", "active", "未完成"),
     option("status", "completed", "已完成"),
+    option("status", "deleted", "最近删除"),
   );
 
   const text = button.querySelector<HTMLElement>(".filter-button-text")!;
@@ -225,7 +238,9 @@ export function syncFilterMenu(
       : activeKind === "status"
         ? activeValue === "active"
           ? "未完成"
-          : "已完成"
+          : activeValue === "completed"
+            ? "已完成"
+            : "最近删除"
         : "全部待办";
 }
 
@@ -243,11 +258,23 @@ function buildCategorySelect(todo: Todo, categories: string[]): HTMLSelectElemen
   return select;
 }
 
+const REPEAT_LABEL: Record<string, string> = { daily: "每天", weekly: "每周", monthly: "每月" };
+
+export interface RenderOptions {
+  /** 回收站模式：只显示文本 + 恢复按钮 */
+  deleted?: boolean;
+  /** 批量模式：勾选框替代完成按钮 */
+  batch?: boolean;
+  /** 批量模式已选 id 集合（渲染时勾选态以此为准） */
+  selected?: Set<string>;
+}
+
 export function renderList(
   listEl: HTMLElement,
   todos: Todo[],
   emptyMessage: string,
   categories: string[] = [],
+  opts: RenderOptions = {},
 ): void {
   const empty = document.createElement("li");
   empty.className = "todo-empty";
@@ -261,24 +288,60 @@ export function renderList(
   const fragment = document.createDocumentFragment();
   for (const todo of todos) {
     const li = document.createElement("li");
-    // 过期标记：仅 未完成+未删除+dueDate<今天；当天不算过期（isOverdue 保证）。样式由 style.css 另行定义
-    li.className = `todo-item${todo.completed ? " is-done" : ""}${isOverdue(todo) ? " overdue" : ""}`;
+    // 过期标记（含当天到点）；置顶与回收站各有专属类名，样式由 style.css 定义
+    li.className =
+      `todo-item${todo.completed ? " is-done" : ""}${isOverdue(todo) ? " overdue" : ""}` +
+      `${todo.pinned ? " is-pinned" : ""}${opts.deleted ? " is-deleted" : ""}`;
     li.dataset.id = todo.id;
 
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "todo-toggle";
-    toggle.setAttribute(
-      "aria-label",
-      todo.completed ? "标记为未完成" : "标记为已完成",
-    );
-    toggle.textContent = "✓";
+    if (opts.deleted) {
+      const label = document.createElement("span");
+      label.className = "todo-text";
+      label.textContent = todo.text;
+
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.className = "todo-restore";
+      restore.setAttribute("aria-label", "恢复");
+      restore.textContent = "恢复";
+
+      li.append(label, restore);
+      fragment.append(li);
+      continue;
+    }
+
+    // 批量模式：勾选框替代完成按钮
+    if (opts.batch) {
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "todo-check";
+      check.setAttribute("aria-label", "选择");
+      check.checked = opts.selected?.has(todo.id) ?? false;
+      li.append(check);
+    } else {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "todo-toggle";
+      toggle.setAttribute("aria-label", todo.completed ? "标记为未完成" : "标记为已完成");
+      toggle.textContent = "✓";
+      li.append(toggle);
+    }
 
     const label = document.createElement("span");
     label.className = "todo-text";
     label.textContent = todo.text;
 
     const categorySelect = buildCategorySelect(todo, categories);
+
+    // 截止时刻：仅设置了截止日期时出现（时刻依赖日期才有意义）
+    let timeInput: HTMLInputElement | null = null;
+    if (todo.dueDate) {
+      timeInput = document.createElement("input");
+      timeInput.type = "time";
+      timeInput.className = "todo-due-time";
+      timeInput.setAttribute("aria-label", "截止时刻");
+      timeInput.value = todo.dueTime ?? "";
+    }
 
     const dueInput = document.createElement("input");
     dueInput.type = "date";
@@ -287,18 +350,33 @@ export function renderList(
     dueInput.value = todo.dueDate ?? ""; // 属性赋值不触发 change，无回写死循环
     if (!todo.dueDate) dueInput.classList.add("is-empty"); // 空值时 CSS 只显示日历图标
 
+    const meta = document.createElement("div");
+    meta.className = "todo-meta";
+    meta.append(categorySelect);
+    if (timeInput) meta.append(timeInput);
+    meta.append(dueInput);
+    if (todo.recurrence) {
+      const repeat = document.createElement("span");
+      repeat.className = "todo-repeat";
+      repeat.title = `${REPEAT_LABEL[todo.recurrence] ?? todo.recurrence}重复`;
+      repeat.textContent = "↻";
+      meta.append(repeat);
+    }
+
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = `todo-pin${todo.pinned ? " is-pinned" : ""}`;
+    pin.setAttribute("aria-label", todo.pinned ? "取消置顶" : "置顶");
+    pin.title = todo.pinned ? "取消置顶" : "置顶";
+    pin.textContent = "★";
+
     const del = document.createElement("button");
     del.type = "button";
     del.className = "todo-delete";
     del.setAttribute("aria-label", "删除");
     del.textContent = "✕";
 
-    // 分类 + 日期包进右侧元信息组，与文本对齐
-    const meta = document.createElement("div");
-    meta.className = "todo-meta";
-    meta.append(categorySelect, dueInput);
-
-    li.append(toggle, label, meta, del);
+    li.append(label, meta, pin, del);
     fragment.append(li);
   }
   listEl.replaceChildren(fragment);

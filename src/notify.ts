@@ -45,3 +45,9 @@ export async function notifyTodoDue(todo: Todo): Promise<void> {
   const body = todo.category ? `${todo.category}：${todo.text} 已到期` : `${todo.text} 已到期`;
   await sendNotification("待办已到期", body, "./icons/icon-256.png");
 }
+
+/** 「提前 1 天」到期提醒（调用方须先 ensurePermission） */
+export async function notifyTodoTomorrow(todo: Todo): Promise<void> {
+  const body = todo.category ? `${todo.category}：${todo.text} 明天到期` : `${todo.text} 明天到期`;
+  await sendNotification("待办提醒", body, "./icons/icon-256.png");
+}

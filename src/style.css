@@ -15,6 +15,7 @@
   --border-strong: #d5dae1;
   --field: #f2f4f7;
   --field-hover: #e9edf2;
+  --hover: #f6f7fa;
   --danger: #ef4444;
   --danger-text: #b42318;
   --danger-soft: rgba(239, 68, 68, 0.1);
@@ -269,6 +270,8 @@ body {
 
 /* 下拉框统一外观：去原生箭头，换浅灰胶囊 + 自绘箭头 */
 .new-todo-category,
+.new-todo-repeat,
+.batch-category,
 .todo-category {
   appearance: none;
   -webkit-appearance: none;
@@ -288,12 +291,16 @@ body {
 }
 
 .new-todo-category:hover,
+.new-todo-repeat:hover,
+.batch-category:hover,
 .todo-category:hover {
   background-color: var(--field-hover);
   color: var(--text);
 }
 
 .new-todo-category:focus-visible,
+.new-todo-repeat:focus-visible,
+.batch-category:focus-visible,
 .todo-category:focus-visible {
   outline: none;
   border-color: var(--accent);
@@ -355,6 +362,44 @@ body {
 .new-todo-due.is-empty {
   width: 40px;
   padding: 0 8px;
+}
+
+/* 新建表单的时刻与重复规则：与分类下拉同族的紧凑控件 */
+.new-todo-time {
+  flex: none;
+  width: 96px;
+  height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-secondary);
+  background-color: var(--field);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+
+.new-todo-time:hover {
+  background-color: var(--field-hover);
+  color: var(--text);
+}
+
+.new-todo-time:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.new-todo-repeat {
+  flex: none;
+  max-width: 108px;
+  height: 40px;
+  padding: 0 28px 0 12px;
+  font-size: 14px;
+  border-radius: var(--radius-control);
 }
 
 .todo-form .btn {
@@ -619,7 +664,7 @@ body {
 }
 
 .todo-item:hover {
-  background: #f6f7fa;
+  background: var(--hover);
 }
 
 /* 完成态 */
@@ -671,7 +716,7 @@ body.is-reordering .todo-item:not(.is-dragging) {
   line-height: 1;
   color: transparent;
   background: var(--card);
-  border: 1.5px solid #ccd2da;
+  border: 1.5px solid var(--border-strong);
   border-radius: 50%;
   cursor: pointer;
   transition:
@@ -1064,6 +1109,275 @@ body.is-reordering .todo-item:not(.is-dragging) {
 }
 
 /* ============================================================
+   搜索 / 置顶 / 重复 / 回收站 / 批量
+   ============================================================ */
+
+/* 工具栏搜索框：占据筛选按钮与「新建分类」之间的弹性空间 */
+.search-input {
+  flex: 1;
+  min-width: 96px;
+  height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  outline: none;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.search-input:hover {
+  background: var(--field-hover);
+}
+
+.search-input:focus {
+  background: var(--card);
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* 置顶按钮：与删除同族的悬停显现按钮；已置顶常显并用主题色 */
+.todo-pin {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.todo-item:hover .todo-pin,
+.todo-pin:focus-visible {
+  opacity: 1;
+}
+
+.todo-pin:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.todo-pin.is-pinned {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* 置顶条目：左侧细竖线标识分组边界 */
+.todo-item.is-pinned {
+  box-shadow: inset 2.5px 0 0 var(--accent);
+}
+
+/* 重复徽标 */
+.todo-repeat {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+/* 截止时刻输入：随日期出现在行内，紧凑胶囊 */
+.todo-due-time {
+  flex: none;
+  width: 84px;
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background-color: var(--field);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.todo-due-time:hover {
+  background-color: var(--field-hover);
+}
+
+.todo-due-time:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+  background-color: var(--card);
+}
+
+.todo-item.overdue .todo-due-time {
+  color: var(--danger-text);
+}
+
+/* 回收站：整行弱化，恢复按钮与删除同位 */
+.todo-item.is-deleted {
+  opacity: 0.62;
+  cursor: default;
+}
+
+.todo-item.is-deleted:hover {
+  background: transparent;
+}
+
+.todo-item.is-deleted .todo-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.todo-restore {
+  flex: none;
+  margin-left: auto;
+  height: 26px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.todo-restore:hover {
+  color: var(--accent-dark);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 批量模式：勾选框 */
+.todo-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* 底部批量条：与 footer 同布局 */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.batch-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.batch-btn {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.batch-btn:hover {
+  color: var(--accent);
+}
+
+.batch-btn.danger:hover {
+  color: var(--danger);
+}
+
+.batch-category {
+  max-width: 110px;
+  height: 26px;
+  padding: 0 22px 0 10px;
+  font-size: 12.5px;
+  border-radius: 999px;
+}
+
+/* footer 的「多选」入口：链接式文本按钮 */
+.batch-toggle {
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.batch-toggle:hover {
+  color: var(--accent);
+}
+
+/* 同步设置弹窗里的本地备份行 */
+.modal-backup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-backup-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   深色模式：仅覆盖设计令牌
+   ============================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161b;
+    --card: #1a2027;
+    --text: #e7eaee;
+    --text-secondary: #aab3bd;
+    --text-muted: #737d89;
+    --accent-soft: rgba(59, 130, 246, 0.18);
+    --border: #2a323c;
+    --border-strong: #39424e;
+    --field: #212932;
+    --field-hover: #2a333e;
+    --hover: #1f262e;
+    --danger-text: #f87171;
+    --shadow-card:
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.55);
+    --ring: 0 0 0 3px rgba(59, 130, 246, 0.3);
+  }
+}
+
+/* ============================================================
    移动端 / PWA
    ============================================================ */
 
@@ -1080,9 +1394,14 @@ body.is-reordering .todo-item:not(.is-dragging) {
     gap: 4px;
   }
 
-  /* 触屏没有 hover，删除按钮常显 */
-  .todo-delete {
+  /* 触屏没有 hover，删除/置顶按钮常显 */
+  .todo-delete,
+  .todo-pin {
     opacity: 0.6;
+  }
+
+  .todo-pin.is-pinned {
+    opacity: 1;
   }
 }
 
