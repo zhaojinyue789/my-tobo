@@ -40,8 +40,8 @@ export async function sendNotification(title: string, body: string, icon?: strin
   await tauriSendNotification({ title, body, ...(icon ? { icon } : {}) });
 }
 
-/** 待办到期通知（调用方须先 ensurePermission） */
+/** 待办到期通知（调用方须先 ensurePermission）；icon 在部分平台生效，忽略则用系统默认 */
 export async function notifyTodoDue(todo: Todo): Promise<void> {
   const body = todo.category ? `${todo.category}：${todo.text} 已到期` : `${todo.text} 已到期`;
-  await sendNotification("待办已到期", body);
+  await sendNotification("待办已到期", body, "./icons/icon-256.png");
 }

@@ -335,7 +335,7 @@ body {
   color: var(--text-muted);
 }
 
-/* 表单里的分类下拉与提交按钮跟输入框等高 */
+/* 表单里的分类下拉、日期与提交按钮跟输入框等高 */
 .new-todo-category {
   flex: none;
   max-width: 150px;
@@ -343,6 +343,18 @@ body {
   padding: 0 28px 0 12px;
   font-size: 14px;
   border-radius: var(--radius-control);
+}
+
+/* 新建表单的日期：复用列表行内 .todo-due 胶囊外观，等高输入框；空值收成日历图标 */
+.new-todo-due {
+  flex: none;
+  height: 40px;
+  font-size: 14px;
+}
+
+.new-todo-due.is-empty {
+  width: 40px;
+  padding: 0 8px;
 }
 
 .todo-form .btn {
@@ -694,6 +706,24 @@ body.is-reordering .todo-item:not(.is-dragging) {
 .is-done .todo-text {
   color: var(--text-muted);
   text-decoration: line-through;
+}
+
+/* 行内编辑待办文本：替换 .todo-text 的输入框，宽度撑满文本区 */
+.todo-edit {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--card);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-control);
+  outline: none;
+  box-shadow: var(--ring);
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* 行内元信息：分类下拉 + 截止日期 */

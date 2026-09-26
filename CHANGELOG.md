@@ -1,5 +1,27 @@
 # Changelog
 
+## [未发布]（编辑/日期/键盘排序 + 健壮性与工程化）
+
+### Added
+
+- **行内编辑待办文本**：单击条目文本进入编辑（Enter / 失焦提交，Esc 取消，空文本保持原值）；提交只做原地 span 替换不整表重渲染（防止 blur 提交后的重建把「点别处」的点击落到别的控件上）；拖动结束的 click 被 drag 层吞掉，不会误入编辑。
+- **运行中过期扫描**：每小时 `setInterval` + 窗口切回前台时批量扫描过期未通知条目（此前只在启动时扫，长期开着的窗口跨天不报过期）。
+- **新建表单截止日期**：输入框与提交按钮之间新增日历控件（空值收成日历图标），新建即带 `dueDate`，过期立即触发通知检查，提交后自动清空。
+- **键盘排序**：焦点在条目内时 Alt+↑/↓ 与相邻可见条目换位（与拖动同一 `applyMove`：order 中点 + 只写一条），列表重建后焦点回到同一条目的同类控件。
+- **单元测试与 CI**：vitest 覆盖 `todo.ts` / `sanitizeRemoteTodo` 全部纯函数（23 例，含 LWW、order 换算、迁移排序、远端校验）；GitHub Actions 跑 `npm test` + `npm run build`。
+
+### Changed
+
+- **手动新建分类持久化**：存 `my-tobo.manual-categories`，重启保留（此前仅内存）。
+- **SW 缓存版本号构建期注入**：`CACHE_NAME` 占位符由 vite 插件在构建收尾替换为构建号，发版不再需要手动 bump。
+- **过期通知带应用图标**（部分平台生效，忽略则用系统默认）。
+
+### Fixed
+
+- **localStorage 数据损坏静默清空**：解析失败/非数组/迁移异常时，先把原文备份到 `my-tobo.todos.corrupt-backup` 再按空列表起步（此前下次保存会彻底覆盖原始数据）。
+- **order 混合缺失时排序不可传递**：缺 `order` 的条目（远端旧数据合入）与有条目混排时比较器无全序，顺序可能错乱；改为缺省视为 +∞、同值回退 createdAt 降序。
+- **CSP**：补 `Content-Security-Policy`（meta + Tauri conf）：脚本/样式内联放行（单文件构建），`connect-src` 放行 GitHub API 与 Tauri IPC，`object-src 'none'`、`base-uri 'none'`。
+
 ## [未发布]（拖动排序）
 
 ### Added

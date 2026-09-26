@@ -65,12 +65,32 @@ export function isOverdue(t: Todo, today: string = todayISO()): boolean {
   return t.dueDate < today;
 }
 
+/** 损坏备份键：解析失败时把原文存这里，避免下次 persist 把原始数据彻底覆盖 */
+const CORRUPT_BACKUP_KEY = "my-tobo.todos.corrupt-backup";
+
 export function loadTodos(): Todo[] {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const data: unknown = JSON.parse(raw);
-    if (!Array.isArray(data)) return [];
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return []; // localStorage 不可用（隐私模式等）：按空列表起步，读不了也写不了，不影响页面
+  }
+  if (!raw) return [];
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    // 数据损坏：备份原文后按空列表起步（下次保存会覆盖主键，但原文仍在备份键里可手工恢复）
+    backupCorrupt(raw);
+    console.error("[my-tobo] 待办数据 JSON 解析失败，原文已备份：", err);
+    return [];
+  }
+  if (!Array.isArray(data)) {
+    backupCorrupt(raw);
+    console.error("[my-tobo] 待办数据不是数组，原文已备份");
+    return [];
+  }
+  try {
     const todos = data
       .filter(
         (item): item is Todo =>
@@ -84,14 +104,26 @@ export function loadTodos(): Todo[] {
     runStartupMigration(todos);
     // 展示顺序统一以 order 为准（存储数组顺序不可信：迁移补 order / 远端旧数据都会打乱）
     return [...todos].sort(compareDisplay);
-  } catch {
+  } catch (err) {
+    backupCorrupt(raw);
+    console.error("[my-tobo] 待办数据处理失败，原文已备份：", err);
     return [];
   }
 }
 
-/** 展示顺序统一规则：order 升序；缺 order / 并列回退 createdAt 降序。loadTodos 与 mergeTodos 共用 */
+function backupCorrupt(raw: string): void {
+  try {
+    localStorage.setItem(CORRUPT_BACKUP_KEY, raw);
+  } catch {
+    /* 备份失败（配额满等）：只能放弃，主流程继续 */
+  }
+}
+
+/** 展示顺序统一规则：order 升序（缺 order 视为 +∞，保证全序可传递），同值回退 createdAt 降序。loadTodos 与 mergeTodos 共用 */
 function compareDisplay(a: Todo, b: Todo): number {
-  if (a.order != null && b.order != null && a.order !== b.order) return a.order - b.order;
+  const ao = a.order ?? Number.POSITIVE_INFINITY;
+  const bo = b.order ?? Number.POSITIVE_INFINITY;
+  if (ao !== bo) return ao - bo;
   return b.createdAt - a.createdAt;
 }
 
@@ -195,6 +227,18 @@ export function topOrder(todos: Todo[]): number {
 /** 拖动落点写回：只改被拖条目的 order（最小改动面），bump updatedAt 参与双端 LWW */
 export function withOrder(todo: Todo, order: number): Todo {
   return { ...todo, order, updatedAt: Date.now() };
+}
+
+/** 移动落点的 order：两邻条取中点，缺一侧取另一侧 ±1，两侧都缺用 fallback */
+export function orderBetween(
+  prev: Todo | undefined,
+  next: Todo | undefined,
+  fallback: number,
+): number {
+  if (prev?.order != null && next?.order != null) return (prev.order + next.order) / 2;
+  if (prev?.order != null) return prev.order + 1;
+  if (next?.order != null) return next.order - 1;
+  return fallback;
 }
 
 export function sameTodos(a: Todo[], b: Todo[]): boolean {

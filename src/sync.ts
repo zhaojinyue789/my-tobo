@@ -291,8 +291,9 @@ async function gistRequest(
  * 远端条目校验：id/text/createdAt/updatedAt 必填且类型正确，completed/deletedAt 可选但类型须对；
  * category/dueDate/order/notified 可选：类型或内容非法时按未填写/缺失清空，不作为丢弃依据；
  * 脏数据（Gist 被手动改坏等）返回 null 丢弃，防止污染渲染与本地存储。
+ * 导出供单元测试使用。
  */
-function sanitizeRemoteTodo(item: unknown): Todo | null {
+export function sanitizeRemoteTodo(item: unknown): Todo | null {
   if (typeof item !== "object" || item === null) return null;
   const t = item as Todo;
   if (

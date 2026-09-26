@@ -2,10 +2,12 @@ import {
   createTodo,
   isDeleted,
   isOverdue,
+  isValidCategory,
   isValidDueDate,
   loadTodos,
   markDeleted,
   normalizeCategory,
+  orderBetween,
   saveTodos,
   topOrder,
   withOrder,
@@ -54,8 +56,35 @@ const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
 let todos: Todo[] = loadTodos();
 /** 视图态：只影响渲染，不碰数据、不写存储、不触发同步 */
 let view: View = { category: "__all__", status: "all" };
-/** 手动新建的分类：仅内存（不持久化，重启消失且无数据风险），与派生集合合并后进入各下拉框 */
-const manualCategories = new Set<string>();
+/** 行内编辑中的条目 id：编辑期间 render 跳过列表重建，防止编辑框被打断 */
+let editingId: string | null = null;
+
+const MANUAL_CATEGORIES_KEY = "my-tobo.manual-categories";
+
+/** 手动新建的分类：持久化（重启保留），与派生集合合并后进入各下拉框 */
+const manualCategories = loadManualCategories();
+
+function loadManualCategories(): Set<string> {
+  try {
+    const raw = localStorage.getItem(MANUAL_CATEGORIES_KEY);
+    const arr: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(
+      Array.isArray(arr)
+        ? arr.filter((v): v is string => typeof v === "string" && isValidCategory(v))
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function saveManualCategories(): void {
+  try {
+    localStorage.setItem(MANUAL_CATEGORIES_KEY, JSON.stringify([...manualCategories]));
+  } catch {
+    /* 写失败静默：下次添加分类时重写 */
+  }
+}
 
 const sync = new SyncController({
   onTodos: (merged) => {
@@ -75,14 +104,17 @@ function render(): void {
   syncFilter(categories);
   syncNewTodoCategory(categories);
 
-  renderList(
-    listEl,
-    applyFilter(todos, view),
-    todos.some((t) => !isDeleted(t))
-      ? "该筛选下暂无待办"
-      : "这里空空如也，添加一条待办吧～",
-    categories,
-  );
+  // 行内编辑中不重建列表（编辑框会被打断）；编辑结束经 persist/render 补上
+  if (editingId == null) {
+    renderList(
+      listEl,
+      applyFilter(todos, view),
+      todos.some((t) => !isDeleted(t))
+        ? "该筛选下暂无待办"
+        : "这里空空如也，添加一条待办吧～",
+      categories,
+    );
+  }
 
   const live = todos.filter((t) => !isDeleted(t));
   const remaining = live.filter((t) => !t.completed).length;
@@ -126,8 +158,8 @@ async function notifyTodoOnce(todo: Todo): Promise<void> {
   persist();
 }
 
-/** 启动批量：全部过期未通知条目各发一条；单条失败跳过，成功者统一落盘一次 */
-async function notifyOverdueStartup(): Promise<void> {
+/** 批量扫描：全部过期未通知条目各发一条；单条失败跳过，成功者统一落盘一次 */
+async function notifyOverdueBatch(): Promise<void> {
   const targets = todos.filter((t) => isOverdue(t) && !t.notified);
   if (targets.length === 0) return;
   if (!(await ensurePermission())) return;
@@ -186,13 +218,17 @@ form.addEventListener("submit", (e) => {
   const known = new Set([...categoryOptions(todos), ...manualCategories]);
   const rawCategory = newTodoCategory.value;
   const category = rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
+  const rawDue = newTodoDue.value;
   const todo = createTodo(text);
   if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
+  if (isValidDueDate(rawDue)) todo.dueDate = rawDue;
   todo.order = topOrder(todos); // 新条目置顶：order 取现存最小值减 1
   todos.unshift(todo);
   input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
+  newTodoDue.value = ""; // 日期每次清空：通常一条一个截止日期
+  newTodoDue.classList.add("is-empty");
   persist();
-  // 即时到期检查：新建表单暂无日期输入，当前恒不触发；为后续表单扩展预留（任务 D）
+  // 即时到期检查：新建即带过期日期 → 立即通知并标记
   void notifyTodoOnce(todo);
 });
 
@@ -212,6 +248,20 @@ form.insertBefore(
   newTodoCategory,
   form.querySelector<HTMLButtonElement>("button[type=submit]"),
 );
+
+// 新增表单的截止日期：空值收成日历图标，与列表行内日期同款交互
+const newTodoDue = document.createElement("input");
+newTodoDue.type = "date";
+newTodoDue.id = "new-todo-due";
+newTodoDue.className = "todo-due new-todo-due is-empty";
+newTodoDue.setAttribute("aria-label", "新待办的截止日期");
+form.insertBefore(
+  newTodoDue,
+  form.querySelector<HTMLButtonElement>("button[type=submit]"),
+);
+newTodoDue.addEventListener("change", () => {
+  newTodoDue.classList.toggle("is-empty", !newTodoDue.value);
+});
 
 /** 选项 = 未分类("") + 派生分类 + 手动新建；保留当前选中（连续录入），无则按视图态默认 */
 function syncNewTodoCategory(categories: string[]): void {
@@ -242,11 +292,61 @@ listEl.addEventListener("click", (e) => {
     );
   } else if (target.classList.contains("todo-delete")) {
     todos = todos.map((t) => (t.id === id ? markDeleted(t) : t));
+  } else if (target.classList.contains("todo-text")) {
+    beginEdit(item, id);
+    return;
   } else {
     return;
   }
   persist();
 });
+
+// ---------- 行内编辑文本 ----------
+
+/** 单击文本进入编辑：span 换 input；Enter/失焦提交，Esc 还原。
+ *  拖动结束的那次 click 已被 drag 层吞掉，不会误入编辑；编辑中 render 跳过列表重建。 */
+function beginEdit(item: HTMLElement, id: string | undefined): void {
+  if (editingId != null || !id) return;
+  const todo = todos.find((t) => t.id === id);
+  const span = item.querySelector<HTMLElement>(".todo-text");
+  if (!todo || !span) return;
+  editingId = id;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 200; // 与新建输入框一致
+  input.className = "todo-edit";
+  input.setAttribute("aria-label", "编辑待办");
+  input.value = todo.text;
+  span.replaceWith(input);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  let done = false;
+  const endEdit = (save: boolean): void => {
+    if (done || editingId !== id) return;
+    done = true;
+    editingId = null;
+    const next = input.value.trim();
+    const current = todos.find((t) => t.id === id);
+    if (save && current && !isDeleted(current) && next && next !== current.text) {
+      todos = todos.map((t) => (t.id === id ? { ...t, text: next, updatedAt: Date.now() } : t));
+      // 文本改动不影响顺序/统计/筛选：原地换 span 即可，不做整表重渲染——
+      // 否则 blur 提交后的整表重建会把「点别处」的那次点击落到重建后的其他控件上
+      saveTodos(todos);
+      sync.onLocalChange();
+      span.textContent = next;
+    }
+    input.replaceWith(span);
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      endEdit(true); // 直接提交，不依赖 blur（部分内嵌 WebView 无窗口焦点时不派发 blur）
+    } else if (e.key === "Escape") {
+      endEdit(false);
+    }
+  });
+  input.addEventListener("blur", () => endEdit(true));
+}
 
 // 行内控件（分类 select / 日期 input）：change 才写数据并落盘；渲染时直接赋 .value 不触发事件，无回写死循环
 listEl.addEventListener("change", (e) => {
@@ -281,35 +381,63 @@ listEl.addEventListener("change", (e) => {
   if (updated) void notifyTodoOnce(updated);
 });
 
-// ---------- 拖动排序 ----------
+// ---------- 拖动/键盘排序 ----------
 
-// DOM 里的前后邻条即拖动落点：order 取两者中点（越界取邻条 ±1），其余条目不动，
-// 每次拖动只写一条 → LWW 同步改动面最小。筛选视图下以可见邻条为准（被隐藏条目夹在中间属预期）。
-// 渲染顺序跟数组走，落库同时把数组也重排，否则重渲染会弹回原位。
+/** 把 id 条目移到 prevId/nextId 之间（拖动落点与键盘移动共用）：
+ *  order 取邻条中点（缺邻取另一侧 ±1），数组同步重排（渲染顺序跟数组走），只写这一条 → LWW 改动面最小。
+ *  筛选视图下邻条以可见集为准（被隐藏条目夹在中间属预期）。 */
+function applyMove(id: string, prevId: string | null, nextId: string | null): void {
+  const from = todos.findIndex((t) => t.id === id);
+  if (from < 0) return;
+  const current = todos[from];
+  const prev = prevId != null ? todos.find((t) => t.id === prevId) : undefined;
+  const next = nextId != null ? todos.find((t) => t.id === nextId) : undefined;
+  const order = orderBetween(prev, next, current.order ?? 0);
+  if (order === current.order) return; // 原位（含 Esc 还原 / 仅剩一条）：不产生写入与同步
+  const rest = todos.filter((t) => t.id !== id);
+  const at =
+    prevId != null
+      ? rest.findIndex((t) => t.id === prevId) + 1
+      : nextId != null
+        ? rest.findIndex((t) => t.id === nextId)
+        : from; // 前后都无邻条：数组位置不变
+  rest.splice(at, 0, withOrder(current, order));
+  todos = rest;
+  persist();
+}
+
 attachDragReorder(listEl, {
   onDrop: (id, prevId, nextId) => {
-    const from = todos.findIndex((t) => t.id === id);
-    if (from < 0) return;
-    const current = todos[from];
-    const prev = prevId != null ? todos.find((t) => t.id === prevId) : undefined;
-    const next = nextId != null ? todos.find((t) => t.id === nextId) : undefined;
-    let order: number;
-    if (prev?.order != null && next?.order != null) order = (prev.order + next.order) / 2;
-    else if (prev?.order != null) order = prev.order + 1;
-    else if (next?.order != null) order = next.order - 1;
-    else order = current.order ?? 0;
-    if (order === current.order) return; // 原位（含 Esc 还原 / 仅剩一条）：不产生写入与同步
-    const rest = todos.filter((t) => t.id !== id);
-    const at =
-      prevId != null
-        ? rest.findIndex((t) => t.id === prevId) + 1
-        : nextId != null
-          ? rest.findIndex((t) => t.id === nextId)
-          : from; // 前后都无邻条：数组位置不变
-    rest.splice(at, 0, withOrder(current, order));
-    todos = rest;
-    persist();
+    if (id) applyMove(id, prevId, nextId);
   },
+});
+
+// 键盘排序：焦点在条目内任意控件时 Alt+↑/↓ 与相邻可见条目换位（拖动的无障碍替代），
+// 列表重建后把焦点放回同一条目的同类控件
+listEl.addEventListener("keydown", (e) => {
+  if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+  const item = (e.target as HTMLElement).closest<HTMLElement>(".todo-item");
+  const id = item?.dataset.id;
+  if (!item || !id) return;
+  e.preventDefault();
+  const visible = applyFilter(todos, view);
+  const i = visible.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  const up = e.key === "ArrowUp";
+  const j = up ? i - 1 : i + 1;
+  if (!visible[j]) return;
+  const prev = up ? (visible[j - 1] ?? null) : visible[j];
+  const next = up ? visible[j] : (visible[j + 1] ?? null);
+  const hadFocus = document.activeElement;
+  applyMove(id, prev?.id ?? null, next?.id ?? null);
+  // 列表已重建，把焦点放回同一条目的同类控件；rAF 在后台标签页会被暂停，用 setTimeout
+  setTimeout(() => {
+    const li = listEl.querySelector<HTMLElement>(`.todo-item[data-id="${CSS.escape(id)}"]`);
+    if (!li || !(hadFocus instanceof HTMLElement)) return;
+    const cls = [...hadFocus.classList].find((c) => c.startsWith("todo-"));
+    const target = (cls && li.querySelector<HTMLElement>(`.${cls}`)) || li.querySelector<HTMLElement>(".todo-toggle");
+    target?.focus();
+  }, 0);
 });
 
 // ---------- 复合筛选（分类/状态二选一） ----------
@@ -381,6 +509,7 @@ addCategoryBtn.addEventListener("click", () => {
     return showCategoryHint(`分类「${name}」已存在`);
   }
   manualCategories.add(name);
+  saveManualCategories();
   newCategoryInput.value = "";
   showCategoryHint(`已添加「${name}」`);
   render();
@@ -480,14 +609,20 @@ gistDisconnectBtn.addEventListener("click", () => {
 input.focus();
 render();
 // 启动批量过期通知：N 条过期未通知各发一条；权限未授予/失败静默降级
-void notifyOverdueStartup();
+void notifyOverdueBatch();
+// 运行中定期扫描：应用长期开着跨天后也能报过期（每小时一次 + 切回前台时）
+const OVERDUE_POLL_MS = 60 * 60 * 1000;
+setInterval(() => void notifyOverdueBatch(), OVERDUE_POLL_MS);
 // 启动即拉取一次远端（未配置时静默显示“未开启同步”）
 void sync.syncNow();
 // 自动同步循环：30 秒轮询 + 失败退避重试
 sync.startAutoSync();
-// 窗口回到前台立即拉一次（手机切回 App、电脑切回窗口时感知另一端改动）
+// 窗口回到前台立即拉一次（手机切回 App、电脑切回窗口时感知另一端改动），顺带扫过期
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") void sync.syncNow();
+  if (document.visibilityState === "visible") {
+    void sync.syncNow();
+    void notifyOverdueBatch();
+  }
 });
 // 网络恢复立即同步
 window.addEventListener("online", () => void sync.syncNow());
