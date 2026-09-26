@@ -25,6 +25,7 @@ import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
 import { notifyDueBatch } from "./due-scan";
 import { showUndoToast } from "./toast";
+import { syncDueBanner } from "./banner";
 import "./style.css";
 
 // ---------- DOM 装配 ----------
@@ -65,6 +66,10 @@ const gistSaveBtn = document.querySelector<HTMLButtonElement>("#gist-save")!;
 const gistDisconnectBtn = document.querySelector<HTMLButtonElement>("#gist-disconnect")!;
 const gistCloseBtn = document.querySelector<HTMLButtonElement>("#gist-close")!;
 const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
+const dueBannerRoot = document.querySelector<HTMLElement>("#due-banner")!;
+const dueBannerText = document.querySelector<HTMLElement>("#due-banner-text")!;
+const dueBannerViewBtn = document.querySelector<HTMLButtonElement>("#due-banner-view")!;
+const dueBannerCloseBtn = document.querySelector<HTMLButtonElement>("#due-banner-close")!;
 
 // ---------- 模块装配 ----------
 
@@ -120,6 +125,14 @@ setupSyncModal(
 function render(): void {
   // 拖动中重建列表会扯断拖动；拖完 onDrop → persist → render 会补上这次刷新
   if (isDragging()) return;
+  // 页内过期提醒横幅（纯浏览器无系统通知的兜底路径）
+  syncDueBanner(
+    { root: dueBannerRoot, text: dueBannerText, viewBtn: dueBannerViewBtn, closeBtn: dueBannerCloseBtn },
+    () => {
+      app.view = { category: "__all__", status: "today" };
+      render();
+    },
+  );
   // 派生分类与手动新建合并去重：手动分类被赋给条目后会同时出现在两个来源
   const categories = [...new Set([...categoryOptions(app.todos), ...manualCategories])].sort(
     (a, b) => a.localeCompare(b, "zh"),

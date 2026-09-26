@@ -1,6 +1,24 @@
-import { deletedRecently, isDeleted, isOverdue, type Todo } from "./todo";
+import {
+  deletedRecently,
+  isDeleted,
+  isDueSoon,
+  isDueToday,
+  isOverdue,
+  todayISO,
+  type Todo,
+} from "./todo";
 
-export type Filter = "all" | "active" | "completed" | "deleted";
+export type Filter = "all" | "active" | "completed" | "deleted" | "today" | "soon";
+
+/** 状态筛选的展示名（筛选菜单选项与按钮文字共用） */
+export const STATUS_LABEL: Record<Filter, string> = {
+  all: "全部待办",
+  active: "未完成",
+  completed: "已完成",
+  deleted: "最近删除",
+  today: "今天到期",
+  soon: "即将到期",
+};
 
 /** 分类筛选值：__all__=全部、__uncat__=未分类，其余为具体分类名（已归一化） */
 export type CategoryFilter = "__all__" | "__uncat__" | string;
@@ -21,9 +39,12 @@ export function filterTodos(todos: Todo[], filter: Filter): Todo[] {
  * 契约：纯函数；"deleted" 视图只看保留期内的墓碑（回收站）；其余视图已删条目恒不可见；
  * 不改数据、不写存储、不触发同步。复杂度 O(N)。
  */
-export function applyFilter(todos: Todo[], v: View): Todo[] {
+export function applyFilter(todos: Todo[], v: View, today: string = todayISO()): Todo[] {
   if (v.status === "deleted") return todos.filter(deletedRecently);
-  const live = filterTodos(todos, v.status);
+  let live: Todo[];
+  if (v.status === "today") live = todos.filter((t) => isDueToday(t, today));
+  else if (v.status === "soon") live = todos.filter((t) => isDueSoon(t, today));
+  else live = filterTodos(todos, v.status);
   if (v.category === "__all__") return live;
   if (v.category === "__uncat__") return live.filter((t) => t.category == null);
   return live.filter((t) => t.category === v.category);
@@ -225,9 +246,11 @@ export function syncFilterMenu(
     option("category", "__uncat__", "未分类"),
     ...categories.map((name) => option("category", name, name)),
     group("状态"),
-    option("status", "active", "未完成"),
-    option("status", "completed", "已完成"),
-    option("status", "deleted", "最近删除"),
+    option("status", "today", STATUS_LABEL.today),
+    option("status", "soon", STATUS_LABEL.soon),
+    option("status", "active", STATUS_LABEL.active),
+    option("status", "completed", STATUS_LABEL.completed),
+    option("status", "deleted", STATUS_LABEL.deleted),
   );
   // 无激活筛选时首项可 Tab 进入
   if (!menu.querySelector("[aria-selected='true']")) {
@@ -242,11 +265,7 @@ export function syncFilterMenu(
         ? "未分类"
         : activeValue
       : activeKind === "status"
-        ? activeValue === "active"
-          ? "未完成"
-          : activeValue === "completed"
-            ? "已完成"
-            : "最近删除"
+        ? (STATUS_LABEL[activeValue as Filter] ?? "全部待办")
         : "全部待办";
 }
 

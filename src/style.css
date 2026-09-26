@@ -19,6 +19,9 @@
   --danger: #ef4444;
   --danger-text: #b42318;
   --danger-soft: rgba(239, 68, 68, 0.1);
+  --warn-text: #9a3412;
+  --warn-border: #fed7aa;
+  --warn-soft: #fff7ed;
   --shadow-card:
     0 1px 2px rgba(16, 24, 40, 0.05),
     0 12px 32px rgba(16, 24, 40, 0.07);
@@ -212,6 +215,60 @@ body {
   background: #fef3f2;
   border: 1px solid #fecdca;
   border-radius: 10px;
+}
+
+/* 页内过期提醒横幅：纯浏览器端的到期提醒兜底路径 */
+.due-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--warn-text);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: 10px;
+}
+
+.due-banner.hidden {
+  display: none;
+}
+
+.due-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.due-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.due-banner-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn-text);
+  background: none;
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.due-banner-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.due-banner-btn.ghost {
+  border-color: transparent;
+  padding: 3px 6px;
 }
 
 /* ============================================================
@@ -1496,6 +1553,9 @@ body.is-reordering .todo-item:not(.is-dragging) {
     --field-hover: #2a333e;
     --hover: #1f262e;
     --danger-text: #f87171;
+    --warn-text: #fdba74;
+    --warn-border: #7c2d12;
+    --warn-soft: #2b1a0e;
     --shadow-card:
       0 1px 2px rgba(0, 0, 0, 0.4),
       0 12px 32px rgba(0, 0, 0, 0.45);

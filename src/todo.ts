@@ -130,6 +130,19 @@ export function isDueTomorrow(t: Todo, today: string = todayISO()): boolean {
   return t.dueDate === dateOffset(today, 1);
 }
 
+/** 「今天到期」智能视图：未完成、未删除、已过期或今天到期（date-only 当天也计入，到点与否不影响归类） */
+export function isDueToday(t: Todo, today: string = todayISO()): boolean {
+  if (t.completed || isDeleted(t) || !t.dueDate) return false;
+  return t.dueDate <= today;
+}
+
+/** 「即将到期」智能视图：明天起 N 天（默认 7 天）内到期、未完成、未删除 */
+export function isDueSoon(t: Todo, today: string = todayISO(), days = 7): boolean {
+  if (t.completed || isDeleted(t) || !t.dueDate) return false;
+  const end = dateOffset(today, days);
+  return t.dueDate > today && t.dueDate <= end;
+}
+
 /** 损坏备份键：解析失败时把原文存这里，避免下次 persist 把原始数据彻底覆盖 */
 const CORRUPT_BACKUP_KEY = "my-tobo.todos.corrupt-backup";
 

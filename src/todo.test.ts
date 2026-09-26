@@ -4,6 +4,8 @@ import {
   cleanTodoFields,
   createTodo,
   isDeleted,
+  isDueSoon,
+  isDueToday,
   isDueTomorrow,
   isOverdue,
   isValidCategory,
@@ -230,6 +232,21 @@ describe("advanceDate / isDueTomorrow（重复与提前提醒）", () => {
     expect(isDueTomorrow(t1, "2026-09-25")).toBe(false);
     expect(isDueTomorrow({ ...t(), completed: true, dueDate: "2026-09-27" }, "2026-09-26")).toBe(false);
     expect(isDueTomorrow({ ...t(), deletedAt: 1, dueDate: "2026-09-27" }, "2026-09-26")).toBe(false);
+  });
+  it("isDueToday：过期与当天都算，date-only 当天也计入", () => {
+    expect(isDueToday({ ...t(), dueDate: "2026-09-25" }, "2026-09-27")).toBe(true);
+    expect(isDueToday({ ...t(), dueDate: "2026-09-27" }, "2026-09-27")).toBe(true);
+    expect(isDueToday({ ...t(), dueDate: "2026-09-28" }, "2026-09-27")).toBe(false);
+    expect(isDueToday({ ...t(), dueDate: "2026-09-27", completed: true }, "2026-09-27")).toBe(false);
+    expect(isDueToday({ ...t(), dueDate: "2026-09-27", deletedAt: 1 }, "2026-09-27")).toBe(false);
+    expect(isDueToday({ ...t() }, "2026-09-27")).toBe(false);
+  });
+  it("isDueSoon：明天起 7 天内，不含过期与当天", () => {
+    expect(isDueSoon({ ...t(), dueDate: "2026-09-28" }, "2026-09-27")).toBe(true);
+    expect(isDueSoon({ ...t(), dueDate: "2026-10-04" }, "2026-09-27")).toBe(true);
+    expect(isDueSoon({ ...t(), dueDate: "2026-10-05" }, "2026-09-27")).toBe(false);
+    expect(isDueSoon({ ...t(), dueDate: "2026-09-27" }, "2026-09-27")).toBe(false);
+    expect(isDueSoon({ ...t(), dueDate: "2026-09-26" }, "2026-09-27")).toBe(false);
   });
   it("isOverdue 时刻感知：当天到点即过期", () => {
     expect(isOverdue({ ...t(), dueDate: "2026-09-26" }, "2026-09-26", "10:00")).toBe(false);

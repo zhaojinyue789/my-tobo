@@ -40,6 +40,13 @@
       <div id="storage-warning" class="storage-warning hidden">
         存储空间已满，最近的改动可能没有保存，请清理旧待办后重试
       </div>
+      <div id="due-banner" class="due-banner hidden" aria-live="polite">
+        <span id="due-banner-text" class="due-banner-text"></span>
+        <span class="due-banner-actions">
+          <button id="due-banner-view" class="due-banner-btn" type="button">查看</button>
+          <button id="due-banner-close" class="due-banner-btn ghost" type="button" aria-label="关闭提醒">✕</button>
+        </span>
+      </div>
       <form id="todo-form" class="todo-form" autocomplete="off">
         <input
           id="todo-input"
