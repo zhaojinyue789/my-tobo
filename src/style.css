@@ -408,6 +408,56 @@ body {
   font-size: 14px;
 }
 
+/* 扩展选项区：默认收起，聚焦输入框滑出；第二行控件统一收窄一号 */
+.todo-form-options {
+  flex-basis: 100%; /* 独占一行（form 为 flex-wrap） */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    max-height 0.2s ease,
+    opacity 0.15s,
+    margin-top 0.2s,
+    visibility 0s linear 0.2s;
+}
+
+.todo-form-options.open {
+  max-height: 48px;
+  margin-top: 2px;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.todo-form-options .new-todo-category,
+.todo-form-options .new-todo-repeat {
+  height: 32px;
+  max-width: 124px;
+  padding: 0 24px 0 10px;
+  font-size: 13px;
+}
+
+.todo-form-options .new-todo-due {
+  height: 32px;
+  font-size: 13px;
+}
+
+.todo-form-options .new-todo-due.is-empty {
+  width: 32px;
+  padding: 0 6px;
+}
+
+.todo-form-options .new-todo-time {
+  height: 32px;
+  width: 92px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
 /* ============================================================
    工具栏：筛选行 + 「新建分类」折叠面板
    ============================================================ */

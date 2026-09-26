@@ -291,7 +291,9 @@ form.addEventListener("submit", (e) => {
   newTodoDue.value = ""; // 日期/时刻每次清空：通常一条一个截止时间
   newTodoDue.classList.add("is-empty");
   newTodoTime.value = "";
+  newTodoTime.classList.add("hidden"); // 时刻跟随日期隐藏
   newTodoRepeat.value = "";
+  formOptions.classList.remove("open"); // 主行回归简洁：选项区提交后收起
   persist();
   // 即时到期检查：新建即带过期日期/时刻 → 立即通知并标记
   void notifyTodoOnce(todo);
@@ -304,15 +306,19 @@ input.addEventListener("keydown", (e) => {
   form.requestSubmit();
 });
 
-// 新增表单的分类选择器：插在输入框与提交按钮之间，选项每次渲染后同步更新
+// 新增表单的扩展选项区：分类/日期/时刻/重复收进第二行，主行只留输入框 + 添加；
+// 聚焦输入框滑出，提交后收起（时刻仅在选了日期后显示，与列表行内逻辑一致）
+const formOptions = document.createElement("div");
+formOptions.id = "todo-form-options";
+formOptions.className = "todo-form-options";
+form.append(formOptions); // 放在提交按钮之后：主行永远是 输入框+添加，选项区独占第二行
+
+// 新增表单的分类选择器：选项每次渲染后同步更新
 const newTodoCategory = document.createElement("select");
 newTodoCategory.id = "new-todo-category";
 newTodoCategory.className = "new-todo-category";
 newTodoCategory.setAttribute("aria-label", "新待办的分类");
-form.insertBefore(
-  newTodoCategory,
-  form.querySelector<HTMLButtonElement>("button[type=submit]"),
-);
+formOptions.append(newTodoCategory);
 
 // 新增表单的截止日期：空值收成日历图标，与列表行内日期同款交互
 const newTodoDue = document.createElement("input");
@@ -320,25 +326,21 @@ newTodoDue.type = "date";
 newTodoDue.id = "new-todo-due";
 newTodoDue.className = "todo-due new-todo-due is-empty";
 newTodoDue.setAttribute("aria-label", "新待办的截止日期");
-form.insertBefore(
-  newTodoDue,
-  form.querySelector<HTMLButtonElement>("button[type=submit]"),
-);
+formOptions.append(newTodoDue);
 newTodoDue.addEventListener("change", () => {
   newTodoDue.classList.toggle("is-empty", !newTodoDue.value);
+  newTodoTime.classList.toggle("hidden", !newTodoDue.value); // 时刻依赖日期才有意义
 });
 
-// 新增表单的截止时刻与重复规则（时刻仅在选了日期后有意义，提交时校验依赖）
+// 新增表单的截止时刻（默认隐藏，选了日期后出现）
 const newTodoTime = document.createElement("input");
 newTodoTime.type = "time";
 newTodoTime.id = "new-todo-time";
-newTodoTime.className = "new-todo-time";
+newTodoTime.className = "new-todo-time hidden";
 newTodoTime.setAttribute("aria-label", "新待办的截止时刻");
-form.insertBefore(
-  newTodoTime,
-  form.querySelector<HTMLButtonElement>("button[type=submit]"),
-);
+formOptions.append(newTodoTime);
 
+// 新增表单的重复规则
 const newTodoRepeat = document.createElement("select");
 newTodoRepeat.id = "new-todo-repeat";
 newTodoRepeat.className = "new-todo-repeat";
@@ -349,10 +351,12 @@ newTodoRepeat.append(
     buildSelectOption(r, r === "daily" ? "每天" : r === "weekly" ? "每周" : "每月"),
   ),
 );
-form.insertBefore(
-  newTodoRepeat,
-  form.querySelector<HTMLButtonElement>("button[type=submit]"),
-);
+formOptions.append(newTodoRepeat);
+
+// 聚焦输入框展开选项区；提交成功后收起（见 submit 处理器）。
+// pointerdown + focus 双触发：pointerdown 覆盖鼠标/触屏点击，focus 覆盖 Tab 键盘进入
+input.addEventListener("pointerdown", () => formOptions.classList.add("open"));
+input.addEventListener("focus", () => formOptions.classList.add("open"));
 
 /** 选项 = 未分类("") + 派生分类 + 手动新建；保留当前选中（连续录入），无则按视图态默认 */
 function syncNewTodoCategory(categories: string[]): void {

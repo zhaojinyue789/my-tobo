@@ -17,6 +17,7 @@
 
 ### Changed
 
+- **新建表单分层**：主行只留「输入框 + 添加」，分类/日期/时刻/重复收进第二行选项区——点击或聚焦输入框滑出、提交后收起；时刻控件跟随日期显隐。
 - 云端格式 `version` 3 → 4（pinned/dueTime/recurrence/reminded 新字段，旧版本互读兼容）；`sanitizeRemoteTodo`/migrate 对新字段清洗（非法值按未填写处理）。
 - 复合筛选菜单点击渲染从 rAF 改为直接 render（后台/无焦点面板会暂停 rAF 导致切筛选后界面不刷新）；键盘排序焦点恢复同步改为 setTimeout。
 
