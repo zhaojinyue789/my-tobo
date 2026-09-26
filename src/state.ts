@@ -154,6 +154,27 @@ export function undoSnapshot(snapshot: Todo[], removeIds?: ReadonlySet<string>):
   if (changed) persist();
 }
 
+/** 克隆待办：重置 id/完成态/通知标记，其余字段（分类/日期/重复/备注/子任务）照搬，置顶插入 */
+export function cloneTodo(id: string): boolean {
+  const source = app.todos.find((t) => t.id === id);
+  if (!source) return false;
+  const now = Date.now();
+  const copy: Todo = {
+    ...source,
+    id: crypto.randomUUID(),
+    completed: false,
+    completedAt: undefined,
+    notified: undefined,
+    reminded: undefined,
+    createdAt: now,
+    updatedAt: now,
+    order: topOrder(app.todos),
+    subtasks: source.subtasks?.map((s) => ({ ...s, id: crypto.randomUUID(), done: false })),
+  };
+  app.todos.unshift(copy);
+  return true;
+}
+
 /** 完成/取消完成；重复任务被完成时按 dueDate 生成下一实例置顶（取消完成不回收已生成的实例）。
  *  完成同时记录 completedAt 供统计；返回是否有变更（调用方据此决定是否 persist）。 */
 export function setCompleted(id: string, completed: boolean): boolean {

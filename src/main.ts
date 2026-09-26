@@ -25,6 +25,7 @@ import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
 import { setupStats } from "./stats";
 import { setupThemeToggle } from "./theme";
+import { setupShortcuts } from "./shortcuts";
 import { notifyDueBatch } from "./due-scan";
 import { showUndoToast } from "./toast";
 import { syncDueBanner } from "./banner";
@@ -37,6 +38,14 @@ const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
 const { filterButton, filterMenu, searchInput, newCategoryInput, addCategoryBtn, categoryHint } =
   buildToolbar(listEl);
+
+// 全部完成庆祝条：toolbar 与列表之间（buildToolbar 之后插入，正好排在筛选行下面）
+const allDoneBanner = document.createElement("div");
+allDoneBanner.id = "all-done";
+allDoneBanner.className = "all-done hidden";
+allDoneBanner.setAttribute("role", "status");
+allDoneBanner.textContent = "🎉 全部完成！歇口气，或者添加新的待办吧";
+listEl.before(allDoneBanner);
 const footer = document.querySelector<HTMLElement>("#todo-footer")!;
 const countEl = document.querySelector<HTMLSpanElement>("#todo-count")!;
 const clearBtn = document.querySelector<HTMLButtonElement>("#clear-completed")!;
@@ -45,6 +54,9 @@ const statsToggleBtn = document.querySelector<HTMLButtonElement>("#stats-toggle"
 const statsModal = document.querySelector<HTMLElement>("#stats-modal")!;
 const statsCloseBtn = document.querySelector<HTMLButtonElement>("#stats-close")!;
 const statsBody = document.querySelector<HTMLElement>("#stats-body")!;
+const shortcutsModal = document.querySelector<HTMLElement>("#shortcuts-modal")!;
+const shortcutsCloseBtn = document.querySelector<HTMLButtonElement>("#shortcuts-close")!;
+const shortcutsToggleBtn = document.querySelector<HTMLButtonElement>("#shortcuts-toggle")!;
 const batchToggleBtn = document.querySelector<HTMLButtonElement>("#batch-toggle")!;
 const batchBar = document.querySelector<HTMLElement>("#batch-bar")!;
 const batchCountEl = document.querySelector<HTMLElement>("#batch-count")!;
@@ -127,6 +139,13 @@ setupStats(
   { toggleBtn: statsToggleBtn, modal: statsModal, closeBtn: statsCloseBtn, body: statsBody },
   () => app.todos,
 );
+setupShortcuts({
+  newTodoInput: input,
+  searchInput,
+  helpModal: shortcutsModal,
+  helpCloseBtn: shortcutsCloseBtn,
+  helpToggleBtn: shortcutsToggleBtn,
+});
 setupSyncModal(
   {
     settingsBtn: syncSettingsBtn,
@@ -193,6 +212,9 @@ function render(): void {
     clearBtn.classList.toggle("hidden", !live.some((t) => t.completed));
     batchToggleBtn.classList.toggle("hidden", live.length === 0);
   }
+  // 全部完成庆祝：有未删条目且全部已完成时亮起（回收站/批量模式不显示）
+  const allDone = !deletedView && !app.batchMode && live.length > 0 && live.every((t) => t.completed);
+  allDoneBanner.classList.toggle("hidden", !allDone);
   batchCountEl.textContent = `已选 ${app.selectedIds.size} 项`;
 }
 

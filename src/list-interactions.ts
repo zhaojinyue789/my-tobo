@@ -10,6 +10,7 @@ import {
 import {
   app,
   captureSnapshot,
+  cloneTodo,
   persist,
   saveOnly,
   setCompleted,
@@ -54,6 +55,8 @@ export function setupListInteractions(
         const current = app.todos.find((t) => t.id === id);
         if (current) updateTodo(id, { pinned: !current.pinned });
       }
+    } else if (target.classList.contains("todo-clone")) {
+      if (!id || !cloneTodo(id)) return;
     } else if (target.classList.contains("todo-restore")) {
       // 恢复 = 撤销墓碑（updatedAt 更新会按 LWW 复活远端同条目）；重置两个通知标记防误报
       if (id) {

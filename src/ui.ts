@@ -456,13 +456,20 @@ export function renderList(
     pin.title = todo.pinned ? "取消置顶" : "置顶";
     pin.textContent = "★";
 
+    const clone = document.createElement("button");
+    clone.type = "button";
+    clone.className = "todo-clone";
+    clone.setAttribute("aria-label", "克隆待办");
+    clone.title = "克隆";
+    clone.textContent = "⧉";
+
     const del = document.createElement("button");
     del.type = "button";
     del.className = "todo-delete";
     del.setAttribute("aria-label", "删除");
     del.textContent = "✕";
 
-    li.append(label, meta, pin, del);
+    li.append(label, meta, pin, clone, del);
 
     // 备注与子任务：第二行附加区（批量/回收站视图不渲染，保持行紧凑）
     if (!opts.batch) {
