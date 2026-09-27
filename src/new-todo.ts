@@ -1,4 +1,5 @@
 import {
+  cleanPriority,
   createTodo,
   dateOffset,
   isValidDueDate,
@@ -66,6 +67,19 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
   );
   formOptions.append(newTodoRepeat);
 
+  // 新增表单的优先级（默认无，每次提交后复位）
+  const newTodoPriority = document.createElement("select");
+  newTodoPriority.id = "new-todo-priority";
+  newTodoPriority.className = "new-todo-priority";
+  newTodoPriority.setAttribute("aria-label", "优先级");
+  newTodoPriority.append(
+    buildSelectOption("", "无优先"),
+    buildSelectOption("high", "高优先"),
+    buildSelectOption("medium", "中优先"),
+    buildSelectOption("low", "低优先"),
+  );
+  formOptions.append(newTodoPriority);
+
   // 快捷日期：一键填充常用截止日（今天 / 明天 / 一周后）
   const quickDates = document.createElement("div");
   quickDates.className = "quick-dates";
@@ -106,6 +120,7 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
     if (rawRepeat === "daily" || rawRepeat === "weekly" || rawRepeat === "monthly") {
       todo.recurrence = rawRepeat;
     }
+    todo.priority = cleanPriority(newTodoPriority.value);
     todo.order = topOrder(app.todos); // 新条目置顶：order 取现存最小值减 1
     app.todos.unshift(todo);
     input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
@@ -114,6 +129,7 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
     newTodoTime.value = "";
     newTodoTime.classList.add("hidden"); // 时刻跟随日期隐藏
     newTodoRepeat.value = "";
+    newTodoPriority.value = "";
     formOptions.classList.remove("open"); // 主行回归简洁：选项区提交后收起
     persist();
     // 即时到期检查：新建即带过期日期/时刻 → 立即通知并标记

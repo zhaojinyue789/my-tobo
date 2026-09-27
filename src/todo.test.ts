@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   advanceDate,
   cleanNotes,
+  cleanPriority,
+  cleanRecurrence,
   cleanSubtasks,
   cleanTodoFields,
   createTodo,
@@ -20,6 +22,7 @@ import {
   NOTES_MAX_LENGTH,
   orderBetween,
   purgeTombstones,
+  recurrenceLabel,
   sameTodos,
   SUBTASK_MAX_LENGTH,
   topOrder,
@@ -272,6 +275,44 @@ describe("advanceDate / isDueTomorrow（重复与提前提醒）", () => {
     expect(daysBetween("2026-09-25", "2026-09-27")).toBe(-2);
     expect(daysBetween("2026-10-01", "2026-09-27")).toBe(4);
     expect(daysBetween("2027-01-01", "2026-12-31")).toBe(1);
+  });
+  it("weekly+byDay 找下一个选中的周几", () => {
+    // 2026-09-27 是周日；选中二、四 → 下一个应为周二 09-29
+    expect(
+      advanceDate("2026-09-27", { kind: "weekly", byDay: [2, 4] }),
+    ).toBe("2026-09-29");
+    // 当天周五 09-25，选中五 → 次周周五 10-02
+    expect(
+      advanceDate("2026-09-25", { kind: "weekly", byDay: [5] }),
+    ).toBe("2026-10-02");
+  });
+  it("fromCompletion 规则按完成日 + N 天推进", () => {
+    expect(
+      advanceDate("2026-09-27", { kind: "fromCompletion", everyN: 3 }),
+    ).toBe("2026-09-30");
+  });
+  it("cleanRecurrence 白名单清洗结构化规则", () => {
+    expect(cleanRecurrence({ kind: "weekly", byDay: [6, 2, 9, "x"], junk: 1 })).toEqual({
+      kind: "weekly",
+      byDay: [2, 6],
+    });
+    expect(cleanRecurrence({ kind: "fromCompletion", everyN: 0 })).toEqual({ kind: "fromCompletion" });
+    expect(cleanRecurrence({ kind: "fromCompletion", everyN: 365 })).toEqual({
+      kind: "fromCompletion",
+      everyN: 365,
+    });
+    expect(cleanRecurrence({ kind: "yearly" })).toBeUndefined();
+    expect(cleanRecurrence("weekly")).toBe("weekly");
+  });
+  it("cleanPriority 只认高/中/低", () => {
+    expect(cleanPriority("high")).toBe("high");
+    expect(cleanPriority("urgent" as unknown as string)).toBeUndefined();
+    expect(cleanPriority(undefined)).toBeUndefined();
+  });
+  it("recurrenceLabel 覆盖字符串与结构化规则", () => {
+    expect(recurrenceLabel("daily")).toBe("每天");
+    expect(recurrenceLabel({ kind: "weekly", byDay: [2, 4] })).toBe("每周二、四");
+    expect(recurrenceLabel({ kind: "fromCompletion", everyN: 3 })).toBe("完成后 3 天");
   });
   it("isDueTomorrow 只认明天", () => {
     const t1 = { ...t(), dueDate: "2026-09-27" };

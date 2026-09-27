@@ -6,7 +6,9 @@ import {
   isDueSoon,
   isDueToday,
   isOverdue,
+  recurrenceLabel,
   todayISO,
+  type Priority,
   type Todo,
 } from "./todo";
 
@@ -338,6 +340,20 @@ export function dueStatus(
   return null;
 }
 
+/** 优先级旗标配色（滴答式：高红/中黄/低蓝；无优先级灰色） */
+export const PRIORITY_COLORS: Record<Priority, string> = {
+  high: "#ef4444",
+  medium: "#f59e0b",
+  low: "#3b82f6",
+};
+
+const PRIORITY_LABEL: Record<Priority, string> = { high: "高优先", medium: "中优先", low: "低优先" };
+
+/** 优先级循环：点击旗标 高 → 中 → 低 → 无 → 高 */
+export function nextPriority(p: Priority | undefined): Priority | undefined {
+  return p === "high" ? "medium" : p === "medium" ? "low" : p === "low" ? undefined : "high";
+}
+
 /**
  * 截止时间排序键：date-only 视为当天 23:59（当天最后一刻到期）；
  * 字符串比较即时间先后（YYYY-MM-DDTHH:MM 字典序=时间序）。
@@ -347,14 +363,26 @@ function dueSortKey(t: Todo): string | null {
   return `${t.dueDate}T${t.dueTime ?? "23:59"}`;
 }
 
+const PRIORITY_RANK: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+
+function priorityRank(t: Todo): number {
+  return t.priority ? PRIORITY_RANK[t.priority] : 3;
+}
+
 /**
  * 截止时间比较：近的在前。已过期（日期更早）自然排最前；
- * 无截止条目排在所有有截止条目之后，组内保持手动顺序（order 升序，回退 createdAt 降序）。
+ * 同截止时刻时高优先级在前；无截止条目排在所有有截止条目之后，
+ * 组内保持手动顺序（order 升序，回退 createdAt 降序）。
  */
 export function compareByDue(a: Todo, b: Todo): number {
   const ka = dueSortKey(a);
   const kb = dueSortKey(b);
-  if (ka && kb) return ka < kb ? -1 : ka > kb ? 1 : 0;
+  if (ka && kb) {
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    const pr = priorityRank(a) - priorityRank(b);
+    if (pr !== 0) return pr;
+    return 0;
+  }
   if (ka) return -1;
   if (kb) return 1;
   const ao = a.order ?? Number.POSITIVE_INFINITY;
@@ -388,8 +416,6 @@ function buildCategorySelect(todo: Todo, categories: string[]): HTMLSelectElemen
   select.value = todo.category ?? "__uncat__";
   return select;
 }
-
-const REPEAT_LABEL: Record<string, string> = { daily: "每天", weekly: "每周", monthly: "每月" };
 
 export interface RenderOptions {
   /** 回收站模式：只显示文本 + 恢复按钮 */
@@ -506,9 +532,24 @@ export function renderList(
     li.append(main);
 
     if (!opts.batch) {
-      // 第二行：元信息控件（批量模式省略，保持勾选列表紧凑）
+      // 第二行：元信息控件（优先级/分类/时刻/日期/状态），与文本左缘对齐
       const meta = document.createElement("div");
       meta.className = "todo-meta";
+
+      // 优先级旗标：点击循环 高→中→低→无
+      const prio = document.createElement("button");
+      prio.type = "button";
+      prio.className = "todo-priority" + (todo.priority ? " is-set" : "");
+      if (todo.priority) {
+        prio.style.color = PRIORITY_COLORS[todo.priority];
+        prio.title = `${PRIORITY_LABEL[todo.priority]}（点击调整）`;
+      } else {
+        prio.title = "无优先级（点击设为高）";
+      }
+      prio.setAttribute("aria-label", "优先级");
+      prio.textContent = "⚑";
+      meta.append(prio);
+
       if (todo.category) {
         const dot = document.createElement("span");
         dot.className = "cat-dot";
@@ -550,7 +591,7 @@ export function renderList(
       if (todo.recurrence) {
         const repeat = document.createElement("span");
         repeat.className = "todo-repeat";
-        repeat.title = `${REPEAT_LABEL[todo.recurrence] ?? todo.recurrence}重复`;
+        repeat.title = `${recurrenceLabel(todo.recurrence)}重复`;
         repeat.textContent = "↻";
         meta.append(repeat);
       }

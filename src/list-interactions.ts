@@ -7,6 +7,7 @@ import {
   orderBetween,
   withOrder,
 } from "./todo";
+import { nextPriority } from "./ui";
 import {
   app,
   captureSnapshot,
@@ -57,6 +58,11 @@ export function setupListInteractions(
       }
     } else if (target.classList.contains("todo-clone")) {
       if (!id || !cloneTodo(id)) return;
+    } else if (target.classList.contains("todo-priority")) {
+      if (id) {
+        const current = app.todos.find((t) => t.id === id);
+        if (current) updateTodo(id, { priority: nextPriority(current.priority) });
+      }
     } else if (target.classList.contains("todo-restore")) {
       // 恢复 = 撤销墓碑（updatedAt 更新会按 LWW 复活远端同条目）；重置两个通知标记防误报
       if (id) {

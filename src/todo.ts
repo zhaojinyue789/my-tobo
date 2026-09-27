@@ -21,6 +21,8 @@ export interface Todo {
   dueTime?: string;
   /** 重复规则：完成当前实例后按 dueDate 生成下一条（未填不重复） */
   recurrence?: Recurrence;
+  /** 优先级：高/中/低（滴答式旗标；缺省无） */
+  priority?: Priority;
   /** 置顶：展示时排在未置顶条目之前，组内仍按 order 排序 */
   pinned?: boolean;
   /** 排序权重：越小越靠前。新条目取现存最小值减 1，拖动取前后邻条中点；随 updatedAt 走 LWW */
@@ -37,12 +39,69 @@ export interface Todo {
   reminded?: boolean;
 }
 
-export type Recurrence = "daily" | "weekly" | "monthly";
+export type Recurrence = "daily" | "weekly" | "monthly" | RecurrenceRule;
 
-export const RECURRENCES: Recurrence[] = ["daily", "weekly", "monthly"];
+/** 结构化重复规则：滴答式扩展（每周多选周几 / 完成后 N 天再生成） */
+export interface RecurrenceRule {
+  kind: "daily" | "weekly" | "monthly" | "fromCompletion";
+  /** weekly：选中的周几（0=周日…6=周六）；缺省 = 普通每周 */
+  byDay?: number[];
+  /** fromCompletion：完成后 N 天再生成 */
+  everyN?: number;
+}
+
+/** 优先级：高/中/低；undefined = 无优先级 */
+export type Priority = "high" | "medium" | "low";
+
+export const PRIORITIES: Priority[] = ["high", "medium", "low"];
+
+export function cleanPriority(value: unknown): Priority | undefined {
+  return value === "high" || value === "medium" || value === "low" ? value : undefined;
+}
+
+export const RECURRENCES: Array<"daily" | "weekly" | "monthly"> = [
+  "daily",
+  "weekly",
+  "monthly",
+];
+
+export function cleanRecurrence(value: unknown): Recurrence | undefined {
+  if (value === "daily" || value === "weekly" || value === "monthly") return value;
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Partial<RecurrenceRule>;
+  if (
+    r.kind !== "daily" &&
+    r.kind !== "weekly" &&
+    r.kind !== "monthly" &&
+    r.kind !== "fromCompletion"
+  ) {
+    return undefined;
+  }
+  const out: RecurrenceRule = { kind: r.kind };
+  if (r.kind === "weekly" && Array.isArray(r.byDay)) {
+    const days = [
+      ...new Set(
+        r.byDay.filter(
+          (n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 6,
+        ),
+      ),
+    ].sort((a, b) => a - b);
+    if (days.length > 0) out.byDay = days;
+  }
+  if (
+    r.kind === "fromCompletion" &&
+    typeof r.everyN === "number" &&
+    Number.isInteger(r.everyN) &&
+    r.everyN >= 1 &&
+    r.everyN <= 365
+  ) {
+    out.everyN = r.everyN;
+  }
+  return out;
+}
 
 export function isRecurrence(value: unknown): value is Recurrence {
-  return value === "daily" || value === "weekly" || value === "monthly";
+  return cleanRecurrence(value) !== undefined;
 }
 
 const STORAGE_KEY = "my-tobo.todos";
@@ -130,18 +189,50 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((Date.UTC(ay, am - 1, ad) - Date.UTC(by, bm - 1, bd)) / 86_400_000);
 }
 
-/** 重复实例的下一个截止日期：日 +1、周 +7、月 +1 个月（月末溢出收紧到当月最后一天） */
+/** 重复实例的下一个截止日期：日 +1、周 +7、月 +1 个月（月末溢出收紧到当月最后一天）；
+ *  结构化规则：weekly+byDay 找下一个选中的周几，fromCompletion 为完成日 + N 天（由 setCompleted 传入完成日） */
 export function advanceDate(dateISO: string, recurrence: Recurrence): string {
-  const [y, m, d] = dateISO.split("-").map(Number);
+  if (typeof recurrence === "object") {
+    if (recurrence.kind === "weekly" && recurrence.byDay && recurrence.byDay.length > 0) {
+      // 从次日起找第一个落在选中周几的日期（最多找 14 天，规则至少含一个周几必然命中）
+      let next = dateOffset(dateISO, 1);
+      for (let i = 0; i < 14; i++) {
+        const [y, m, d] = next.split("-").map(Number);
+        if (recurrence.byDay.includes(new Date(y, m - 1, d).getDay())) return next;
+        next = dateOffset(next, 1);
+      }
+      return dateOffset(dateISO, 7);
+    }
+    if (recurrence.kind === "fromCompletion") return dateOffset(dateISO, recurrence.everyN ?? 1);
+    if (recurrence.kind === "daily") return dateOffset(dateISO, 1);
+    return advanceMonthly(dateISO);
+  }
   if (recurrence === "daily") return dateOffset(dateISO, 1);
   if (recurrence === "weekly") return dateOffset(dateISO, 7);
-  // 月末收紧：1 月 31 日 +1 个月 → 2 月 28/29 日
-  // m 是 1-based：目标月（下个月）的 0-based 索引就是 m，其天数为 new Date(y, m + 1, 0).getDate()
+  return advanceMonthly(dateISO);
+}
+
+/** 月 +1：月末收紧（1 月 31 日 → 2 月 28/29 日） */
+function advanceMonthly(dateISO: string): string {
+  const [y, m, d] = dateISO.split("-").map(Number);
   const lastDay = new Date(y, m + 1, 0).getDate();
   const target = new Date(y, m, Math.min(d, lastDay));
   const month = String(target.getMonth() + 1).padStart(2, "0");
   const day = String(target.getDate()).padStart(2, "0");
   return `${target.getFullYear()}-${month}-${day}`;
+}
+
+/** 重复规则的展示文案（列表行 ↻ 图标的 title 与 NL chips 共用） */
+export function recurrenceLabel(recurrence: Recurrence): string {
+  if (typeof recurrence === "object") {
+    if (recurrence.kind === "fromCompletion") return `完成后 ${recurrence.everyN ?? 1} 天`;
+    if (recurrence.kind === "weekly" && recurrence.byDay && recurrence.byDay.length > 0) {
+      const names = ["日", "一", "二", "三", "四", "五", "六"];
+      return `每周${recurrence.byDay.map((d) => names[d]).join("、")}`;
+    }
+    return recurrence.kind === "daily" ? "每天" : recurrence.kind === "weekly" ? "每周" : "每月";
+  }
+  return recurrence === "daily" ? "每天" : recurrence === "weekly" ? "每周" : "每月";
 }
 
 /** 已完成/已删除永不过期；无 dueDate 不过期；date-only 当天不算过期；带 dueTime 当天到点即过期 */
@@ -272,7 +363,8 @@ export function cleanTodoFields(t: Todo): Todo {
     category: normalizeCategory(t.category),
     dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
     dueTime: isValidDueTime(t.dueTime) ? t.dueTime : undefined,
-    recurrence: isRecurrence(t.recurrence) ? t.recurrence : undefined,
+    recurrence: cleanRecurrence(t.recurrence),
+    priority: cleanPriority(t.priority),
     pinned: t.pinned === true ? true : undefined,
     order: typeof t.order === "number" && Number.isFinite(t.order) ? t.order : undefined,
     notes: cleanNotes(t.notes),

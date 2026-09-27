@@ -994,6 +994,30 @@ body.is-reordering .todo-item:not(.is-dragging) {
   border-radius: 50%;
 }
 
+/* 优先级旗标：无优先级灰色弱化，设置后按级别着色（高红/中黄/低蓝） */
+.todo-priority {
+  flex: none;
+  border: none;
+  background: none;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 6px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.todo-priority.is-set {
+  opacity: 1;
+}
+
+.todo-priority:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+
 /* 第三行：备注与子任务附加区 */
 .todo-extras {
   display: flex;
@@ -2309,6 +2333,11 @@ body.is-reordering .todo-item:not(.is-dragging) {
     gap: 8px;
     margin-left: 36px;
     flex-wrap: wrap;
+  }
+
+  .todo-priority {
+    font-size: 16px;
+    padding: 6px 6px;
   }
 
   .todo-extras {

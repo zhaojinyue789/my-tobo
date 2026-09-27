@@ -1,9 +1,11 @@
 import {
   advanceDate,
+  dateOffset,
   isDeleted,
   isValidCategory,
   loadTodos,
   sameTodos,
+  todayISO,
   topOrder,
   type Todo,
 } from "./todo";
@@ -218,20 +220,29 @@ export function setCompleted(id: string, completed: boolean): boolean {
         }
       : x,
   );
-  if (completed && t.recurrence && t.dueDate) {
-    const now = Date.now();
-    app.todos.unshift({
-      id: crypto.randomUUID(),
-      text: t.text,
-      category: t.category,
-      dueDate: advanceDate(t.dueDate, t.recurrence),
-      dueTime: t.dueTime,
-      recurrence: t.recurrence,
-      completed: false,
-      createdAt: now,
-      updatedAt: now,
-      order: topOrder(app.todos),
-    });
+  if (completed && t.recurrence) {
+    const rule = t.recurrence;
+    const fromCompletion = typeof rule === "object" && rule.kind === "fromCompletion";
+    // 「完成后 N 天」：以完成日为基准生成（无截止日期的重复任务也适用）；其余按 dueDate 推进
+    if (t.dueDate || fromCompletion) {
+      const now = Date.now();
+      const nextDue = fromCompletion
+        ? dateOffset(todayISO(), rule.everyN ?? 1)
+        : advanceDate(t.dueDate as string, rule);
+      app.todos.unshift({
+        ...t,
+        id: crypto.randomUUID(),
+        completed: false,
+        completedAt: undefined,
+        notified: undefined,
+        reminded: undefined,
+        dueDate: nextDue,
+        createdAt: now,
+        updatedAt: now,
+        order: topOrder(app.todos),
+        subtasks: t.subtasks?.map((s) => ({ ...s, id: crypto.randomUUID(), done: false })),
+      });
+    }
   }
   return true;
 }
