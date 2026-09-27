@@ -8,9 +8,30 @@ import {
   topOrder,
   type Todo,
 } from "./todo";
-import { applyFilter, sortTodosByDue, type View } from "./ui";
+import { applyFilter, sortTodosByDue, type View, type ViewMode } from "./ui";
 
 export type SortMode = "manual" | "due";
+
+const VIEW_MODE_KEY = "my-tobo.view-mode";
+
+function loadViewMode(): ViewMode {
+  try {
+    const raw = localStorage.getItem(VIEW_MODE_KEY);
+    return raw === "board" || raw === "calendar" || raw === "timeline" ? raw : "list";
+  } catch {
+    return "list";
+  }
+}
+
+/** 切换视图模式并持久化（设备本地偏好） */
+export function setViewMode(mode: ViewMode): void {
+  app.viewMode = mode;
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch {
+    /* 持久化失败不影响本次会话 */
+  }
+}
 
 const SORT_KEY = "my-tobo.sort";
 
@@ -40,6 +61,8 @@ export const app = {
   selectedIds: new Set<string>(),
   /** 排序模式：manual=手动（order 字段），due=按截止时间（近的在前） */
   sortMode: loadSortMode(),
+  /** 视图模式：列表/看板/日历/时间线 */
+  viewMode: loadViewMode(),
 };
 
 /** 切换排序模式并持久化（设备本地偏好） */

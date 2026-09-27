@@ -27,6 +27,9 @@ export const STATUS_LABEL: Record<Filter, string> = {
 /** 视图态：纯渲染层状态，与数据无关，不写存储、不触发同步 */
 export type View = { status: Filter };
 
+/** 视图模式：列表 / 看板 / 日历 / 时间线 */
+export type ViewMode = "list" | "board" | "calendar" | "timeline";
+
 export function filterTodos(todos: Todo[], filter: Filter): Todo[] {
   // 已删除（墓碑未过期）的项不参与展示
   const live = todos.filter((t) => !isDeleted(t));
@@ -64,6 +67,8 @@ export interface ToolbarRefs {
   filterMenu: HTMLElement;
   /** 排序模式切换按钮：手动 ⇄ 按截止时间（图标反映当前模式） */
   sortToggle: HTMLButtonElement;
+  /** 视图模式切换（列表/看板/日历/时间线） */
+  viewSwitch: HTMLElement;
   /** 文本搜索框（实时过滤当前视图） */
   searchInput: HTMLInputElement;
 }
@@ -118,11 +123,56 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   searchInput.maxLength = 50;
   searchInput.setAttribute("aria-label", "搜索待办");
 
-  filters.append(filterWrap, sortToggle, searchInput);
+  // 视图模式切换：列表/看板/日历/时间线（图标 + 选中态，点击由 main 绑定）
+  const viewSwitch = document.createElement("div");
+  viewSwitch.className = "view-switch";
+  viewSwitch.setAttribute("role", "group");
+  viewSwitch.setAttribute("aria-label", "视图模式");
+  const VIEW_MODE_META: { key: ViewMode; label: string; icon: string }[] = [
+    {
+      key: "list",
+      label: "列表",
+      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg>`,
+    },
+    {
+      key: "board",
+      label: "看板",
+      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="10" rx="1" /><rect x="17" y="4" width="4" height="13" rx="1" /></svg>`,
+    },
+    {
+      key: "calendar",
+      label: "日历",
+      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>`,
+    },
+    {
+      key: "timeline",
+      label: "时间线",
+      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 3v18" /><circle cx="12" cy="7" r="2" /><circle cx="14" cy="13" r="2" /><circle cx="11" cy="19" r="2" /></svg>`,
+    },
+  ];
+  for (const m of VIEW_MODE_META) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "view-switch-btn";
+    btn.dataset.vm = m.key;
+    btn.title = `${m.label}视图`;
+    btn.setAttribute("aria-label", `${m.label}视图`);
+    btn.innerHTML = `${m.icon}<span>${m.label}</span>`;
+    viewSwitch.append(btn);
+  }
+  filters.append(filterWrap, sortToggle, viewSwitch, searchInput);
 
   root.append(filters);
   before.before(root);
-  return { root, filterButton, filterMenu, sortToggle, searchInput };
+  return { root, filterButton, filterMenu, sortToggle, viewSwitch, searchInput };
+}
+
+/** 同步视图切换的选中态 */
+export function syncViewSwitch(container: HTMLElement, mode: ViewMode): void {
+  container.querySelectorAll<HTMLElement>("[data-vm]").forEach((btn) => {
+    btn.classList.toggle("is-selected", btn.dataset.vm === mode);
+    btn.setAttribute("aria-pressed", String(btn.dataset.vm === mode));
+  });
 }
 
 /** 排序切换按钮的图标与文案（SVG 与同步栏图标同风格） */

@@ -2358,3 +2358,417 @@ body.is-reordering .todo-item:not(.is-dragging) {
     animation: none !important;
   }
 }
+
+/* ============================================================
+   视图切换 + 看板 / 日历 / 时间线
+   ============================================================ */
+
+/* 视图模式切换（分段控件） */
+.view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--field);
+  border-radius: var(--radius-control);
+  padding: 2px;
+}
+
+.view-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 5px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.view-switch-btn:hover {
+  color: var(--text);
+}
+
+.view-switch-btn.is-selected {
+  color: var(--accent);
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+/* ---------- 看板 ---------- */
+
+.board {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  align-items: flex-start;
+  min-height: 200px;
+}
+
+.board-col {
+  flex: none;
+  width: min(260px, 78vw);
+  background: var(--field);
+  border-radius: var(--radius-control);
+  padding: 10px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+
+.board-col.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.board-col-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 2px 4px 8px;
+}
+
+.board-count {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.board-count.is-warn {
+  color: var(--danger-text);
+}
+
+.board-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.kb-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kb-card.is-overdue {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.kb-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kb-flag {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.kb-flag.is-set {
+  opacity: 1;
+}
+
+.kb-card-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.kb-card:hover .kb-card-actions {
+  opacity: 1;
+}
+
+.kb-btn {
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 6px;
+}
+
+.kb-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.kb-card-text {
+  font-size: 13.5px;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.kb-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.kb-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--field);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.kb-chip.is-overdue {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+/* 拖拽幽灵卡与原卡占位 */
+.drag-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  transform: rotate(2deg);
+  box-shadow: var(--shadow-pop);
+  opacity: 0.95;
+  margin: 0;
+}
+
+.card-drag-source {
+  opacity: 0.35;
+}
+
+/* ---------- 日历 ---------- */
+
+.cal {
+  margin-top: 12px;
+}
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cal-title {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cal-nav {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.cal-nav:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.cal-cell {
+  min-height: 76px;
+  background: var(--field);
+  border-radius: 8px;
+  padding: 4px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+
+.cal-cell:hover {
+  background: var(--hover);
+}
+
+.cal-cell.is-today {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.cal-cell.is-today .cal-daynum {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.cal-cell.is-outside .cal-daynum {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.cal-cell.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.cal-daynum {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.cal-chip {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 2px 5px;
+  cursor: grab;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.cal-chip.is-overdue {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+.cal-more {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- 时间线 ---------- */
+
+.timeline {
+  margin-top: 14px;
+}
+
+.timeline-empty {
+  padding: 36px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tl-group {
+  margin-bottom: 18px;
+}
+
+.tl-group-head {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tl-group.is-overdue .tl-group-head {
+  color: var(--danger-text);
+}
+
+.tl-group.is-today .tl-group-head {
+  color: var(--accent);
+}
+
+.tl-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px 7px 14px;
+  position: relative;
+}
+
+/* 左侧轨道与圆点 */
+.tl-item::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.tl-group:first-child .tl-item:first-child::before {
+  top: 50%;
+}
+
+.tl-group:last-child .tl-item:last-child::before {
+  bottom: 50%;
+}
+
+.tl-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  margin-left: -5px;
+  z-index: 1;
+}
+
+.tl-time {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--field);
+  border-radius: 6px;
+  padding: 2px 7px;
+  min-width: 44px;
+  text-align: center;
+}
+
+.tl-time.is-allday {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.tl-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* 非列表视图隐藏搜索（看板/日历/时间线不参与文本搜索的提示弱化）——保留搜索框，仅样式不变 */

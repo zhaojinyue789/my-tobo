@@ -9,8 +9,13 @@ import {
   renderList,
   syncFilterMenu,
   syncSortToggle,
+  syncViewSwitch,
   type Filter,
+  type ViewMode,
 } from "./ui";
+import { renderBoard } from "./board";
+import { renderCalendar } from "./calendar-view";
+import { renderTimeline } from "./timeline";
 import {
   app,
   captureSnapshot,
@@ -18,6 +23,7 @@ import {
   persist,
   setCompleted,
   setSortMode,
+  setViewMode,
   undoSnapshot,
   updateTodo,
   visibleTodos,
@@ -44,7 +50,7 @@ import "./style.css";
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const { filterButton, filterMenu, sortToggle, searchInput } = buildToolbar(listEl);
+const { filterButton, filterMenu, sortToggle, viewSwitch, searchInput } = buildToolbar(listEl);
 
 // 全部完成庆祝条 + 完成进度线：toolbar 与列表之间
 const progressLine = document.createElement("div");
@@ -208,14 +214,21 @@ function render(): void {
   syncFilter();
 
   const deletedView = app.view.status === "deleted";
+  const listView = app.viewMode === "list";
   form.classList.toggle("hidden", deletedView);
   // FAB 与新建表单互斥显示（回收站不提供新建）
   fabAdd.classList.toggle("hidden", deletedView);
-  batchBar.classList.toggle("hidden", !app.batchMode || deletedView);
-  footer.classList.toggle("hidden", deletedView || app.batchMode);
+  // 批量条是列表视图专属；非列表视图显示的是全部未完成任务，状态筛选不参与
+  batchBar.classList.toggle("hidden", !app.batchMode || deletedView || !listView);
+  footer.classList.toggle("hidden", deletedView || (app.batchMode && listView));
 
-  // 行内编辑中不重建列表（编辑框会被打断）；编辑结束经 persist/render 补上
-  if (app.editingId == null) {
+  syncViewSwitch(viewSwitch, app.viewMode);
+
+  if (app.viewMode !== "list") {
+    // 看板/日历/时间线：展示全部未完成任务（状态筛选是列表视图概念）
+    renderAlternateView(listEl);
+  } else if (app.editingId == null) {
+    // 行内编辑中不重建列表（编辑框会被打断）；编辑结束经 persist/render 补上
     renderList(
       listEl,
       visibleTodos(),
@@ -257,6 +270,44 @@ function render(): void {
   const allDone = !deletedView && !app.batchMode && live.length > 0 && live.every((t) => t.completed);
   allDoneBanner.classList.toggle("hidden", !allDone);
   batchCountEl.textContent = `已选 ${app.selectedIds.size} 项`;
+}
+
+/** 非列表视图分发：看板 / 日历 / 时间线 */
+function renderAlternateView(container: HTMLElement): void {
+  const mode: ViewMode = app.viewMode;
+  const hooks = {
+    onComplete: (id: string) => {
+      if (setCompleted(id, true)) persist();
+    },
+    onDelete: (id: string) => {
+      const current = app.todos.find((t) => t.id === id);
+      if (!current || isDeleted(current)) return;
+      const snapshot = captureSnapshot();
+      updateTodo(id, { deletedAt: Date.now() });
+      persist();
+      showUndoToast(`已删除「${current.text}」`, () => undoSnapshot(snapshot));
+    },
+    isActive: () => app.editingId == null,
+  };
+  const calendarHooks = {
+    ...hooks,
+    onPickDate: (date: string) => {
+      // 快速排程：填入日期并聚焦输入框（回列表视图完成输入）
+      const due = document.querySelector<HTMLInputElement>("#new-todo-due");
+      if (due) {
+        due.value = date;
+        due.classList.remove("is-empty");
+        document.querySelector<HTMLInputElement>("#todo-input")?.focus();
+      }
+    },
+  };
+  if (mode === "board") {
+    renderBoard(container, app.todos, hooks);
+  } else if (mode === "calendar") {
+    renderCalendar(container, app.todos, calendarHooks);
+  } else {
+    renderTimeline(container, app.todos);
+  }
 }
 
 /** 复合筛选同步：按当前视图态刷新按钮与菜单 */
@@ -310,9 +361,29 @@ fabAdd.addEventListener("click", () => {
 sortToggle.addEventListener("click", () => {
   setSortMode(app.sortMode === "due" ? "manual" : "due");
   syncSortToggle(sortToggle, app.sortMode);
+
+// 视图模式切换（设备本地偏好）
+viewSwitch.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-vm]");
+  if (!btn) return;
+  setViewMode(btn.dataset.vm as ViewMode);
+  syncViewSwitch(viewSwitch, app.viewMode);
+  render();
+});
+syncViewSwitch(viewSwitch, app.viewMode);
   render();
 });
 syncSortToggle(sortToggle, app.sortMode);
+
+// 视图模式切换（设备本地偏好）
+viewSwitch.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-vm]");
+  if (!btn) return;
+  setViewMode(btn.dataset.vm as ViewMode);
+  syncViewSwitch(viewSwitch, app.viewMode);
+  render();
+});
+syncViewSwitch(viewSwitch, app.viewMode);
 
 // ---------- 清除动作（footer，均带撤销窗口） ----------
 
