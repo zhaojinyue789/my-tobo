@@ -94,6 +94,7 @@ const gistSaveBtn = document.querySelector<HTMLButtonElement>("#gist-save")!;
 const gistDisconnectBtn = document.querySelector<HTMLButtonElement>("#gist-disconnect")!;
 const gistCloseBtn = document.querySelector<HTMLButtonElement>("#gist-close")!;
 const storageWarning = document.querySelector<HTMLElement>("#storage-warning")!;
+const fabAdd = document.querySelector<HTMLButtonElement>("#fab-add")!;
 const dueBannerRoot = document.querySelector<HTMLElement>("#due-banner")!;
 const dueBannerText = document.querySelector<HTMLElement>("#due-banner-text")!;
 const dueBannerViewBtn = document.querySelector<HTMLButtonElement>("#due-banner-view")!;
@@ -193,6 +194,8 @@ function render(): void {
 
   const deletedView = app.view.status === "deleted";
   form.classList.toggle("hidden", deletedView);
+  // FAB 与新建表单互斥显示（回收站不提供新建）
+  fabAdd.classList.toggle("hidden", deletedView);
   batchBar.classList.toggle("hidden", !app.batchMode || deletedView);
   footer.classList.toggle("hidden", deletedView || app.batchMode);
 
@@ -283,6 +286,14 @@ function renderSyncStatus(status: SyncStatus): void {
       syncNowBtn.disabled = false;
   }
 }
+
+// ---------- 底部快速添加 FAB（仅移动端显示） ----------
+
+// 点击：滚回顶部并聚焦输入框（聚焦会自动滑出分类/日期选项区）
+fabAdd.addEventListener("click", () => {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  input.focus();
+});
 
 // ---------- 清除动作（footer，均带撤销窗口） ----------
 

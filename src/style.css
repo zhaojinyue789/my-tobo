@@ -542,6 +542,11 @@ body {
   transition-delay: 0s;
 }
 
+/* 底部快速添加悬浮按钮（FAB）：仅移动端显示，桌面无此元素 */
+.fab-add {
+  display: none;
+}
+
 .todo-form-options .new-todo-category,
 .todo-form-options .new-todo-repeat {
   height: 32px;
@@ -2165,7 +2170,58 @@ body.is-reordering .todo-item:not(.is-dragging) {
   }
 
   .app {
-    padding: 18px 14px 14px;
+    padding: 18px 14px 72px; /* 底部留白给 FAB，滚动到尽头不被遮挡 */
+  }
+
+  .app-title {
+    font-size: 20px;
+  }
+
+  /* 选项区展开高度：手机上换行到多行，桌面单行的 48px 会把内容裁掉 */
+  .todo-form-options.open {
+    max-height: 220px;
+  }
+
+  /* 筛选菜单加大触控面积 */
+  .filter-menu {
+    min-width: 280px;
+  }
+
+  .filter-menu-option {
+    padding: 12px;
+  }
+
+  /* 手机没有键盘：快捷键入口与相关能力不适用，直接隐藏 */
+  #shortcuts-toggle {
+    display: none;
+  }
+
+  /* 底部快速添加 FAB */
+  .fab-add {
+    position: fixed;
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    z-index: 6; /* 低于模态遮罩（10），弹窗打开时不悬浮 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+
+  .fab-add.hidden {
+    display: none;
+  }
+
+  .fab-add:active {
+    transform: scale(0.94);
   }
 
   /* iOS Safari 聚焦字号 <16px 的输入框会自动放大页面，一律提到 16px */
