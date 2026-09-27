@@ -505,8 +505,23 @@ export function renderList(
   listEl.replaceChildren(fragment);
 }
 
-/** 备注与子任务附加区：无备注无子任务时仍给出「＋备注 / ＋子任务」入口（hover 显现） */
+/** 备注与子任务附加区：两者都为空时按钮并排一行（不浪费纵向空间），否则竖排内容区 */
 function buildExtras(todo: Todo): HTMLElement | null {
+  if (!todo.notes && !todo.subtasks) {
+    const actions = document.createElement("div");
+    actions.className = "todo-extras is-actions";
+    const addNotes = document.createElement("button");
+    addNotes.type = "button";
+    addNotes.className = "todo-notes-add";
+    addNotes.textContent = "＋备注";
+    const addSub = document.createElement("button");
+    addSub.type = "button";
+    addSub.className = "todo-sub-add";
+    addSub.textContent = "＋子任务";
+    actions.append(addNotes, addSub);
+    return actions;
+  }
+
   const extras = document.createElement("div");
   extras.className = "todo-extras";
 

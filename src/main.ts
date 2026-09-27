@@ -474,8 +474,9 @@ document.addEventListener("visibilitychange", () => {
 // 网络恢复立即同步
 window.addEventListener("online", () => void sync.syncNow());
 
-// PWA：仅在 http(s) 环境注册（file:// 与 Tauri 自定义协议下跳过）
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+// PWA：仅在 http(s) 生产环境注册（file:// 与 Tauri 自定义协议下跳过）。
+// dev 模式绝不注册：SW 对同源静态资源是缓存优先，会把 Vite 的模块与 HMR 更新永久钉在旧版本。
+if ("serviceWorker" in navigator && !import.meta.env.DEV && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("./sw.js").catch(() => {
     /* 注册失败不影响功能 */
   });

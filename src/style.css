@@ -37,6 +37,16 @@
   box-sizing: border-box;
 }
 
+/* 触屏：去掉双击缩放延迟（不阻碍捏合缩放页面） */
+button,
+input,
+select,
+textarea,
+label,
+a {
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -45,6 +55,10 @@ body {
   align-items: flex-start;
   /* 桌面窗口下内容靠上居中，而不是垂直居中偏下 */
   padding: clamp(32px, 9vh, 88px) 16px 56px;
+  /* 刘海/手势条安全区（viewport-fit=cover 时生效，桌面 env=0 无影响） */
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  -webkit-tap-highlight-color: transparent;
   background:
     radial-gradient(1100px 380px at 50% -120px, rgba(59, 130, 246, 0.09), transparent 70%),
     var(--bg);
@@ -946,6 +960,13 @@ body.is-reordering .todo-item:not(.is-dragging) {
   flex-direction: column;
   gap: 4px;
   margin: 0 0 0 30px;
+}
+
+/* 空状态变体：＋备注 / ＋子任务 并排一行，不浪费纵向空间 */
+.todo-extras.is-actions {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
 }
 
 /* 备注预览：多行折叠为最多两行，点击进入编辑 */
@@ -2012,7 +2033,7 @@ body.is-reordering .todo-item:not(.is-dragging) {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -2140,26 +2161,137 @@ body.is-reordering .todo-item:not(.is-dragging) {
 
 @media (max-width: 520px) {
   body {
-    padding: 24px 12px 48px;
+    padding: 20px 12px calc(44px + env(safe-area-inset-bottom, 0px));
   }
 
   .app {
-    padding: 20px 16px 16px;
+    padding: 18px 14px 14px;
+  }
+
+  /* iOS Safari 聚焦字号 <16px 的输入框会自动放大页面，一律提到 16px */
+  .todo-input,
+  .search-input,
+  .new-category,
+  .todo-edit,
+  .todo-notes-edit,
+  .sub-add,
+  .todo-category,
+  .todo-due,
+  .todo-due-time,
+  .new-todo-category,
+  .new-todo-due,
+  .new-todo-time,
+  .new-todo-repeat,
+  .batch-category {
+    font-size: 16px;
+  }
+
+  /* 触控目标增大（≥34px，推荐 44px 内尽量兼顾信息密度） */
+  .todo-category,
+  .todo-due,
+  .todo-due-time {
+    height: 34px;
+  }
+
+  .todo-due.is-empty,
+  .todo-due-time.is-empty {
+    width: 34px;
+  }
+
+  .todo-due.is-empty:focus {
+    width: 126px;
+  }
+
+  .todo-toggle {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+  }
+
+  .todo-check,
+  .sub-check {
+    width: 18px;
+    height: 18px;
   }
 
   .todo-meta {
-    gap: 4px;
+    gap: 8px;
+    margin-left: 36px;
+    flex-wrap: wrap;
   }
 
-  /* 触屏没有 hover，删除/置顶/克隆按钮常显 */
+  .todo-extras {
+    margin-left: 36px;
+  }
+
+  .todo-pin,
+  .todo-clone,
+  .todo-delete {
+    font-size: 16px;
+    padding: 6px 8px;
+  }
+
+  .todo-restore {
+    padding: 8px 16px;
+  }
+
+  .due-chip {
+    padding: 6px 10px;
+  }
+
+  .quick-date-btn,
+  .new-todo-category,
+  .new-todo-repeat {
+    height: 36px;
+  }
+
+  .sub-add {
+    height: 34px;
+  }
+
+  .batch-bar {
+    flex-wrap: wrap;
+  }
+
+  .due-banner {
+    flex-wrap: wrap;
+  }
+
+  /* 触屏没有 hover：行动按钮与「＋备注/＋子任务」入口常显 */
   .todo-delete,
   .todo-pin,
-  .todo-clone {
+  .todo-clone,
+  .todo-notes-add,
+  .todo-sub-add {
     opacity: 0.6;
   }
 
   .todo-pin.is-pinned {
     opacity: 1;
+  }
+
+  /* 弹窗改底部动作面板（bottom sheet）：拇指可达，圆角只在顶部 */
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-width: none;
+    width: 100%;
+    max-height: 88vh;
+    max-height: 88dvh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 统计概览 5 卡改 2 列 */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats-dist-label {
+    width: 64px;
   }
 }
 
