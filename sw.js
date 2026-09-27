@@ -1,6 +1,6 @@
 // 应用外壳缓存：dist 是单文件 index.html，缓存导航入口即可离线使用；
 // 网络优先保证更新能到达，断网时回退缓存。
-const CACHE_NAME = "my-tobo-mujky89j";
+const CACHE_NAME = "my-tobo-mujo8mog";
 const SHELL_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -18,6 +18,24 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
+  );
+});
+
+// 到期通知的操作按钮（✓ 完成 / ⏰ 稍后）：把动作回传给页面处理；
+// 点通知正文则聚焦已打开的应用（无打开窗口时不主动新建，用户自行进入）
+self.addEventListener("notificationclick", (event) => {
+  const { action, data } = event.notification;
+  event.notification.close();
+  if (!action || !data || typeof data.id !== "string") return;
+  event.waitUntil(
+    (async () => {
+      const msg = { type: action === "complete" ? "notify-complete" : "notify-snooze", id: data.id };
+      const clientList = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+      if (clientList.length > 0) {
+        clientList[0].postMessage(msg);
+        if (clientList[0].focus) await clientList[0].focus();
+      }
+    })(),
   );
 });
 
