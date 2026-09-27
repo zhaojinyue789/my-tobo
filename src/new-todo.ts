@@ -6,9 +6,11 @@ import {
   isValidDueTime,
   normalizeCategory,
   RECURRENCES,
+  recurrenceLabel,
   todayISO,
   topOrder,
 } from "./todo";
+import { parseNaturalLanguage, type NLResult } from "./nl-parse";
 import { buildSelectOption, categoryOptions } from "./ui";
 import { app, manualCategories, persist } from "./state";
 import { notifyTodoOnce } from "./due-scan";
@@ -23,6 +25,65 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
   formOptions.id = "todo-form-options";
   formOptions.className = "todo-form-options";
   form.append(formOptions); // 放在提交按钮之后：主行永远是 输入框+添加，选项区独占第二行
+
+  // 自然语言解析 chips：输入实时解析（明天3点/每周二/#分类/!高），Todoist 式预览将应用的字段
+  const nlChips = document.createElement("div");
+  nlChips.id = "nl-chips";
+  nlChips.className = "nl-chips hidden";
+  formOptions.before(nlChips);
+
+  function chipDateLabel(date: string): string {
+    const t = todayISO();
+    if (date === t) return "今天";
+    if (date === dateOffset(t, 1)) return "明天";
+    return date.slice(5);
+  }
+
+  function renderChips(nl: NLResult | null): void {
+    if (!nl) {
+      nlChips.replaceChildren();
+      nlChips.classList.add("hidden");
+      return;
+    }
+    const parts: HTMLElement[] = [];
+    if (nl.date) {
+      const chip = document.createElement("span");
+      chip.className = "nl-chip";
+      chip.textContent = `📅 ${chipDateLabel(nl.date)}${nl.time ? " " + nl.time : ""}`;
+      parts.push(chip);
+    }
+    if (nl.recurrence) {
+      const chip = document.createElement("span");
+      chip.className = "nl-chip";
+      chip.textContent = `↻ ${recurrenceLabel(nl.recurrence)}`;
+      parts.push(chip);
+    }
+    if (nl.category) {
+      const chip = document.createElement("span");
+      chip.className = "nl-chip";
+      chip.textContent = `# ${nl.category}`;
+      parts.push(chip);
+    }
+    if (nl.priority) {
+      const chip = document.createElement("span");
+      chip.className = "nl-chip";
+      chip.textContent = `⚑ ${nl.priority === "high" ? "高优先" : nl.priority === "medium" ? "中优先" : "低优先"}`;
+      parts.push(chip);
+    }
+    nlChips.replaceChildren(...parts);
+    nlChips.classList.toggle("hidden", parts.length === 0);
+  }
+
+  let nlTimer: ReturnType<typeof setTimeout> | undefined;
+  let nl: NLResult | null = null;
+  input.addEventListener("input", () => {
+    clearTimeout(nlTimer);
+    nlTimer = setTimeout(() => {
+      const raw = input.value.trim();
+      nl = raw ? parseNaturalLanguage(raw) : null;
+      renderChips(nl);
+    }, 120);
+  });
 
   // 新增表单的分类选择器：选项每次渲染后同步更新
   const newTodoCategory = document.createElement("select");
@@ -103,7 +164,11 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const text = input.value.trim();
+    const rawText = input.value.trim();
+    if (!rawText) return;
+    // 自然语言解析：剥离出的片段作为字段应用，剩余为标题（无解析结果时整句为标题）
+    nl = rawText ? parseNaturalLanguage(rawText) : null;
+    const text = nl?.text || rawText;
     if (!text) return;
     // 极罕见竞态：选中的分类在提交前已消失（无引用且非手动新建）→ 降级为未分类，不丢待办
     const known = new Set([...categoryOptions(app.todos), ...manualCategories]);
@@ -121,9 +186,20 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
       todo.recurrence = rawRepeat;
     }
     todo.priority = cleanPriority(newTodoPriority.value);
+    // NL 解析结果覆盖手动选择（更明确的表达）；#新分类 直接创建（由派生分类集自然收录）
+    if (nl) {
+      if (nl.date) todo.dueDate = nl.date;
+      if (nl.time && todo.dueDate) todo.dueTime = nl.time;
+      if (nl.recurrence) todo.recurrence = nl.recurrence;
+      if (nl.priority) todo.priority = nl.priority;
+      const nlCategory = normalizeCategory(nl.category);
+      if (nlCategory) todo.category = nlCategory;
+    }
     todo.order = topOrder(app.todos); // 新条目置顶：order 取现存最小值减 1
     app.todos.unshift(todo);
     input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
+    renderChips(null);
+    nl = null;
     newTodoDue.value = ""; // 日期/时刻每次清空：通常一条一个截止时间
     newTodoDue.classList.add("is-empty");
     newTodoTime.value = "";
