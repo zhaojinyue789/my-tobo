@@ -20,14 +20,17 @@ import {
   manualCategories,
   persist,
   saveManualCategories,
+  setCompleted,
   setSortMode,
   undoSnapshot,
+  updateTodo,
   visibleTodos,
 } from "./state";
 import { isDragging } from "./drag";
 import { SyncController, type SyncStatus } from "./sync";
 import { setupNewTodo } from "./new-todo";
 import { setupListInteractions } from "./list-interactions";
+import { attachSwipeActions } from "./swipe";
 import { setupBatch, syncBatchCategory } from "./batch";
 import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
@@ -131,6 +134,22 @@ initAppServices({
 
 const { syncNewTodoCategory } = setupNewTodo(form, input);
 setupListInteractions(listEl, { render });
+
+// 移动端滑动操作：右滑完成、左滑删除（批量模式/回收站/行内编辑中停用）
+attachSwipeActions(listEl, {
+  onComplete: (id) => {
+    if (setCompleted(id, true)) persist();
+  },
+  onDelete: (id) => {
+    const current = app.todos.find((t) => t.id === id);
+    if (!current || isDeleted(current)) return;
+    const snapshot = captureSnapshot();
+    updateTodo(id, { deletedAt: Date.now() });
+    persist();
+    showUndoToast(`已删除「${current.text}」`, () => undoSnapshot(snapshot));
+  },
+  isActive: () => !app.batchMode && app.view.status !== "deleted" && app.editingId == null,
+});
 setupBatch(
   {
     toggleBtn: batchToggleBtn,
