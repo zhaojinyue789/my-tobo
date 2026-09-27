@@ -44,6 +44,18 @@ describe("computeStats", () => {
     expect(s.days.map((d) => d.count)).toEqual([0, 0, 0, 0, 2, 0, 1]);
   });
 
+  it("连续完成天数：今天没完成从昨天起算，断档清零", () => {
+    const at = (dayOffset: number): number => new Date(2026, 8, 27 + dayOffset).getTime();
+    const todos = [
+      t({ id: "a", completed: true, completedAt: at(0) }),
+      t({ id: "b", completed: true, completedAt: at(-1) }),
+      t({ id: "c", completed: true, completedAt: at(-2) }),
+      t({ id: "d", completed: true, completedAt: at(-4) }), // 断档
+    ];
+    expect(computeStats(todos, today).streak).toBe(3);
+    expect(computeStats(todos.slice(1), today).streak).toBe(2); // 今天没完成，从昨天起算
+  });
+
   it("分类分布按数量降序，未分类聚合", () => {
     const todos = [
       t({ id: "a", category: "工作" }),

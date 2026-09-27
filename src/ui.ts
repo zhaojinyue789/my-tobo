@@ -426,6 +426,17 @@ export interface RenderOptions {
   selected?: Set<string>;
   /** 空状态装饰图标（emoji） */
   emptyIcon?: string;
+  /** 按截止日期分组展示（「即将到期」视图）：插入 今天/明天/周X 组头 */
+  groupByDue?: boolean;
+}
+
+/** 分组头文案：今天 / 明天 / M/D 周X */
+export function dueGroupLabel(date: string, today: string = todayISO()): string {
+  if (date === today) return "今天";
+  if (date === dateOffset(today, 1)) return "明天";
+  const [y, m, d] = date.split("-").map(Number);
+  const wd = new Date(y, m - 1, d).getDay();
+  return `${m}/${d} 周${"日一二三四五六"[wd]}`;
 }
 
 export function renderList(
@@ -455,9 +466,38 @@ export function renderList(
     return;
   }
 
+  // 「即将到期」视图按天分组：组内按截止时间升序，插入今天/明天/周X 组头
+  if (opts.groupByDue) {
+    const sorted = sortTodosByDue(todos);
+    const today = todayISO();
+    const fragment = document.createDocumentFragment();
+    let lastDate: string | null = null;
+    for (const todo of sorted) {
+      const label = todo.dueDate ? dueGroupLabel(todo.dueDate, today) : "";
+      if (todo.dueDate && label !== lastDate) {
+        lastDate = label;
+        const header = document.createElement("li");
+        header.className = "group-header";
+        header.textContent = label;
+        header.setAttribute("role", "presentation");
+        fragment.append(header);
+      }
+      fragment.append(renderTodoItem(todo, categories, opts));
+    }
+    listEl.replaceChildren(fragment);
+    return;
+  }
+
   const fragment = document.createDocumentFragment();
   for (const todo of todos) {
-    const li = document.createElement("li");
+    fragment.append(renderTodoItem(todo, categories, opts));
+  }
+  listEl.replaceChildren(fragment);
+}
+
+/** 构建单条待办的 li：主行（勾选/文本/行动按钮）+ 元信息行（优先级/分类/日期/状态）+ 附加行（备注/子任务） */
+function renderTodoItem(todo: Todo, categories: string[], opts: RenderOptions): HTMLElement {
+  const li = document.createElement("li");
     // 过期标记（含当天到点）；置顶与回收站各有专属类名，样式由 style.css 定义
     li.className =
       `todo-item${todo.completed ? " is-done" : ""}${isOverdue(todo) ? " overdue" : ""}` +
@@ -482,8 +522,7 @@ export function renderList(
 
       main.append(label, restore);
       li.append(main);
-      fragment.append(li);
-      continue;
+      return li;
     }
 
     // 批量模式：勾选框替代完成按钮
@@ -603,9 +642,7 @@ export function renderList(
       if (extras) li.append(extras);
     }
 
-    fragment.append(li);
-  }
-  listEl.replaceChildren(fragment);
+    return li;
 }
 
 /** 备注与子任务附加区：两者都为空时按钮并排一行（不浪费纵向空间），否则竖排内容区 */

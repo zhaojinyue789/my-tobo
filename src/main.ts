@@ -242,6 +242,8 @@ function render(): void {
         batch: app.batchMode,
         selected: app.selectedIds,
         emptyIcon: deletedView ? "🗑" : app.todos.some((t) => !isDeleted(t)) ? "🔍" : "🌱",
+        // 「即将到期」视图按天分组（Todoist Upcoming 风）
+        groupByDue: app.view.status === "soon" && !app.batchMode,
       },
     );
   }

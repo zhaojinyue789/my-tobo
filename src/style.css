@@ -1530,6 +1530,19 @@ body.is-reordering .todo-item:not(.is-dragging) {
   display: block;
 }
 
+/* 按天分组头（「即将到期」视图） */
+.group-header {
+  padding: 14px 8px 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.group-header:first-child {
+  padding-top: 6px;
+}
+
 /* 完成进度线：toolbar 下方 3px 细条 */
 .progress-line {
   height: 3px;
@@ -2035,6 +2048,17 @@ body.is-reordering .todo-item:not(.is-dragging) {
 
 .stat-card.is-warn .stat-num {
   color: var(--danger-text);
+}
+
+/* 连续完成徽章 */
+.stats-streak {
+  align-self: flex-start;
+  font-size: 13px;
+  font-weight: 600;
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.12);
+  border-radius: 999px;
+  padding: 5px 12px;
 }
 
 .stats-section {

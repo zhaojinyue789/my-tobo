@@ -16,6 +16,8 @@ export interface StatsSummary {
   completed: number;
   overdue: number;
   dueToday: number;
+  /** 连续完成天数：今天（或昨天）起每天都有完成任务 */
+  streak: number;
   /** 近 7 天每日完成数（含今天，index 6 = 今天） */
   days: { date: string; count: number }[];
   /** 分类分布：[分类名或"__uncat__", 数量]，按数量降序 */
@@ -37,10 +39,21 @@ export function computeStats(todos: Todo[], today: string = todayISO()): StatsSu
     days.push(bucket);
     byDate.set(date, bucket);
   }
+  const completionDates = new Set<string>();
   for (const t of live) {
     if (!t.completed || t.completedAt == null) continue;
-    const bucket = byDate.get(timestampToISO(t.completedAt));
+    const date = timestampToISO(t.completedAt);
+    completionDates.add(date);
+    const bucket = byDate.get(date);
     if (bucket) bucket.count++;
+  }
+
+  // 连续完成天数：今天有完成从今天数，否则从昨天数（今天还没动手不打断连击）
+  let streak = 0;
+  let cursor = completionDates.has(today) ? today : dateOffset(today, -1);
+  while (completionDates.has(cursor)) {
+    streak++;
+    cursor = dateOffset(cursor, -1);
   }
 
   const catMap = new Map<string, number>();
@@ -56,6 +69,7 @@ export function computeStats(todos: Todo[], today: string = todayISO()): StatsSu
     completed,
     overdue,
     dueToday,
+    streak,
     days,
     categories,
   };
@@ -106,6 +120,14 @@ function renderStats(body: HTMLElement, s: StatsSummary): void {
     card("今天到期", s.dueToday),
   );
   body.append(grid);
+
+  // 连续完成徽章（有连击才显示）
+  if (s.streak > 0) {
+    const badge = document.createElement("div");
+    badge.className = "stats-streak";
+    badge.textContent = `🔥 连续完成 ${s.streak} 天`;
+    body.append(badge);
+  }
 
   // 近 7 天完成趋势
   const trend = document.createElement("section");
