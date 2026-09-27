@@ -2,7 +2,6 @@ import {
   advanceDate,
   dateOffset,
   isDeleted,
-  isValidCategory,
   loadTodos,
   sameTodos,
   todayISO,
@@ -31,7 +30,7 @@ function loadSortMode(): SortMode {
  */
 export const app = {
   todos: loadTodos(),
-  view: { category: "__all__", status: "all" } as View,
+  view: { status: "all" } as View,
   /** 行内编辑中的条目 id：编辑期间 render 跳过列表重建，防止编辑框被打断 */
   editingId: null as string | null,
   /** 文本搜索词（实时过滤当前视图，大小写不敏感） */
@@ -50,33 +49,6 @@ export function setSortMode(mode: SortMode): void {
     localStorage.setItem(SORT_KEY, mode);
   } catch {
     /* 持久化失败不影响本次会话 */
-  }
-}
-
-const MANUAL_CATEGORIES_KEY = "my-tobo.manual-categories";
-
-/** 手动新建的分类：持久化（重启保留），与派生集合合并后进入各下拉框 */
-export const manualCategories: Set<string> = loadManualCategories();
-
-function loadManualCategories(): Set<string> {
-  try {
-    const raw = localStorage.getItem(MANUAL_CATEGORIES_KEY);
-    const arr: unknown = raw ? JSON.parse(raw) : [];
-    return new Set(
-      Array.isArray(arr)
-        ? arr.filter((v): v is string => typeof v === "string" && isValidCategory(v))
-        : [],
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-export function saveManualCategories(): void {
-  try {
-    localStorage.setItem(MANUAL_CATEGORIES_KEY, JSON.stringify([...manualCategories]));
-  } catch {
-    /* 写失败静默：下次添加分类时重写 */
   }
 }
 

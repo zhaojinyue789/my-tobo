@@ -340,10 +340,7 @@ body {
 }
 
 /* 下拉框统一外观：去原生箭头，换浅灰胶囊 + 自绘箭头 */
-.new-todo-category,
-.new-todo-repeat,
-.batch-category,
-.todo-category {
+.new-todo-repeat {
   appearance: none;
   -webkit-appearance: none;
   font: inherit;
@@ -361,18 +358,12 @@ body {
   text-overflow: ellipsis;
 }
 
-.new-todo-category:hover,
-.new-todo-repeat:hover,
-.batch-category:hover,
-.todo-category:hover {
+.new-todo-repeat:hover {
   background-color: var(--field-hover);
   color: var(--text);
 }
 
-.new-todo-category:focus-visible,
-.new-todo-repeat:focus-visible,
-.batch-category:focus-visible,
-.todo-category:focus-visible {
+.new-todo-repeat:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--ring);
@@ -413,16 +404,7 @@ body {
   color: var(--text-muted);
 }
 
-/* 表单里的分类下拉、日期与提交按钮跟输入框等高 */
-.new-todo-category {
-  flex: none;
-  max-width: 150px;
-  height: 40px;
-  padding: 0 28px 0 12px;
-  font-size: 14px;
-  border-radius: var(--radius-control);
-}
-
+/* 表单里的日期与提交按钮跟输入框等高 */
 /* 新建表单的日期：复用列表行内 .todo-due 胶囊外观，等高输入框；空值收成日历图标 */
 .new-todo-due {
   flex: none;
@@ -573,7 +555,6 @@ body {
   display: none;
 }
 
-.todo-form-options .new-todo-category,
 .todo-form-options .new-todo-repeat {
   height: 32px;
   max-width: 124px;
@@ -762,113 +743,6 @@ body {
   font-size: 12px;
 }
 
-/* 「+ 新建分类」触发器：链接样式常驻筛选行右侧，不抢视觉焦点 */
-.cat-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  padding: 4px 6px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-/* 「＋」前缀提示这是新增动作 */
-.cat-trigger::before {
-  content: "+";
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.cat-trigger:hover {
-  color: var(--text);
-}
-
-.cat-trigger:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-}
-
-/* 行内编辑区：grid-rows 0fr→1fr 滑出/收起动效，收起时不占任何空间 */
-.cat-editor-wrap {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.2s ease;
-}
-
-.cat-editor-wrap.open {
-  grid-template-rows: 1fr;
-}
-
-.cat-editor {
-  overflow: hidden;
-  min-height: 0;
-  visibility: hidden;
-  transition: visibility 0s linear 0.2s;
-}
-
-.cat-editor-wrap.open .cat-editor {
-  visibility: visible;
-  transition-delay: 0s;
-}
-
-.cat-editor-inner {
-  display: flex;
-  gap: 8px;
-  padding-top: 10px;
-}
-
-.cat-editor .btn {
-  height: 32px;
-  padding: 0 14px;
-  font-size: 13px;
-}
-
-.new-category {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  background: var(--card);
-  border: 1.5px solid var(--border-strong);
-  border-radius: 8px;
-  outline: none;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-
-.new-category::placeholder {
-  color: var(--text-muted);
-}
-
-.new-category:focus {
-  border-color: var(--accent);
-  box-shadow: var(--ring);
-}
-
-.cat-panel-body .btn {
-  height: 34px;
-  padding: 0 14px;
-  font-size: 13px;
-}
-
-.category-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  align-self: center;
-}
-
 /* ============================================================
    待办列表
    ============================================================ */
@@ -1045,14 +919,6 @@ body.is-reordering .todo-item:not(.is-dragging) {
   align-items: center;
   gap: 6px;
   margin-left: 30px;
-}
-
-/* 分类色点：哈希取色，行内与筛选菜单共用 */
-.cat-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 /* 优先级旗标：无优先级灰色弱化，设置后按级别着色（高红/中黄/低蓝） */
@@ -1253,16 +1119,6 @@ body.is-reordering .todo-item:not(.is-dragging) {
   background: var(--card);
   border-color: var(--accent);
   box-shadow: var(--ring);
-}
-
-.todo-category {
-  height: 26px;
-  max-width: 132px;
-  padding: 0 22px 0 10px;
-  font-size: 12.5px;
-  border-radius: 999px;
-  background-position: right 7px center;
-  cursor: pointer; /* 否则继承 .todo-item 的 grab */
 }
 
 /* 截止日期：空值时只显示日历图标，聚焦时展开为完整编辑框 */
@@ -1967,14 +1823,6 @@ body.is-reordering .todo-item:not(.is-dragging) {
   color: var(--danger);
 }
 
-.batch-category {
-  max-width: 110px;
-  height: 26px;
-  padding: 0 22px 0 10px;
-  font-size: 12.5px;
-  border-radius: 999px;
-}
-
 /* footer 的「多选」入口：链接式文本按钮 */
 .batch-toggle {
   padding: 0;
@@ -2371,23 +2219,18 @@ body.is-reordering .todo-item:not(.is-dragging) {
   /* iOS Safari 聚焦字号 <16px 的输入框会自动放大页面，一律提到 16px */
   .todo-input,
   .search-input,
-  .new-category,
   .todo-edit,
   .todo-notes-edit,
   .sub-add,
-  .todo-category,
   .todo-due,
   .todo-due-time,
-  .new-todo-category,
   .new-todo-due,
   .new-todo-time,
-  .new-todo-repeat,
-  .batch-category {
+  .new-todo-repeat {
     font-size: 16px;
   }
 
   /* 触控目标增大（≥34px，推荐 44px 内尽量兼顾信息密度） */
-  .todo-category,
   .todo-due,
   .todo-due-time {
     height: 34px;
@@ -2445,7 +2288,6 @@ body.is-reordering .todo-item:not(.is-dragging) {
   }
 
   .quick-date-btn,
-  .new-todo-category,
   .new-todo-repeat {
     height: 36px;
   }

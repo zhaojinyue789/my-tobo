@@ -24,11 +24,8 @@ export const STATUS_LABEL: Record<Filter, string> = {
   soon: "即将到期",
 };
 
-/** 分类筛选值：__all__=全部、__uncat__=未分类，其余为具体分类名（已归一化） */
-export type CategoryFilter = "__all__" | "__uncat__" | string;
-
 /** 视图态：纯渲染层状态，与数据无关，不写存储、不触发同步 */
-export type View = { category: CategoryFilter; status: Filter };
+export type View = { status: Filter };
 
 export function filterTodos(todos: Todo[], filter: Filter): Todo[] {
   // 已删除（墓碑未过期）的项不参与展示
@@ -49,21 +46,7 @@ export function applyFilter(todos: Todo[], v: View, today: string = todayISO()):
   if (v.status === "today") live = todos.filter((t) => isDueToday(t, today));
   else if (v.status === "soon") live = todos.filter((t) => isDueSoon(t, today));
   else live = filterTodos(todos, v.status);
-  if (v.category === "__all__") return live;
-  if (v.category === "__uncat__") return live.filter((t) => t.category == null);
-  return live.filter((t) => t.category === v.category);
-}
-
-/**
- * 分类候选集：从现存有效条目派生（已删不计入），去重后按 zh 排序。
- * 纯函数，O(N) 派生 + O(K log K) 排序（K = 去重后分类数 ≤ N）。
- */
-export function categoryOptions(todos: Todo[]): string[] {
-  const set = new Set<string>();
-  for (const t of todos) {
-    if (!isDeleted(t) && t.category) set.add(t.category);
-  }
-  return [...set].sort((a, b) => a.localeCompare(b, "zh"));
+  return live;
 }
 
 export function buildSelectOption(value: string, label: string): HTMLOptionElement {
@@ -71,21 +54,6 @@ export function buildSelectOption(value: string, label: string): HTMLOptionEleme
   opt.value = value;
   opt.textContent = label;
   return opt;
-}
-
-/**
- * 分类名 → 稳定颜色：FNV-1a 哈希取色相，避开与危险红过近的区间（0°±15）。
- * 同名分类在任何设备/主题下颜色一致；未分类无颜色。
- */
-export function categoryColor(name: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < name.length; i++) {
-    hash ^= name.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  const hue = Math.abs(hash) % 360;
-  const safeHue = hue < 20 || hue > 340 ? hue + 45 : hue;
-  return `hsl(${safeHue} 62% 52%)`;
 }
 
 export interface ToolbarRefs {
@@ -98,10 +66,6 @@ export interface ToolbarRefs {
   sortToggle: HTMLButtonElement;
   /** 文本搜索框（实时过滤当前视图） */
   searchInput: HTMLInputElement;
-  newCategoryInput: HTMLInputElement;
-  addCategoryBtn: HTMLButtonElement;
-  /** 新建分类的反馈行（空值/重复/成功提示） */
-  categoryHint: HTMLElement;
 }
 
 /** 顶部工具栏：复合筛选 + 「新建分类」行内编辑；构建后插在列表容器之前 */
@@ -110,7 +74,7 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   root.id = "toolbar";
   root.className = "toolbar";
 
-  // 筛选行：复合筛选按钮（分类/状态二选一）+ 右侧「+ 新建分类」触发器
+  // 筛选行：复合筛选按钮 + 排序切换 + 搜索
   const filters = document.createElement("div");
   filters.className = "toolbar-filters";
 
@@ -154,83 +118,11 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   searchInput.maxLength = 50;
   searchInput.setAttribute("aria-label", "搜索待办");
 
-  // 「+ 新建分类」触发器：链接样式常驻筛选行右侧，默认收起不占行
-  const trigger = document.createElement("button");
-  trigger.className = "cat-trigger";
-  trigger.type = "button";
-  trigger.textContent = "新建分类";
-  trigger.setAttribute("aria-expanded", "false");
-  trigger.setAttribute("aria-controls", "cat-editor");
+  filters.append(filterWrap, sortToggle, searchInput);
 
-  const categoryHint = document.createElement("span");
-  categoryHint.id = "category-hint";
-  categoryHint.className = "category-hint hidden";
-  categoryHint.setAttribute("role", "status");
-  // 提示放在筛选行内而非编辑区里：编辑区自动收起后「已添加」仍可见
-  filters.append(filterWrap, sortToggle, searchInput, trigger, categoryHint);
-
-  // 行内编辑区：默认收起（0 高度），点击触发器后在下方滑出输入框 + 确定按钮
-  const editorWrap = document.createElement("div");
-  editorWrap.className = "cat-editor-wrap";
-  editorWrap.id = "cat-editor";
-
-  const editor = document.createElement("div");
-  editor.className = "cat-editor";
-  const editorInner = document.createElement("div");
-  editorInner.className = "cat-editor-inner";
-
-  const newCategoryInput = document.createElement("input");
-  newCategoryInput.id = "new-category";
-  newCategoryInput.className = "new-category";
-  newCategoryInput.type = "text";
-  newCategoryInput.maxLength = 20;
-  newCategoryInput.placeholder = "输入分类名，如：工作";
-
-  const addCategoryBtn = document.createElement("button");
-  addCategoryBtn.id = "add-category";
-  addCategoryBtn.className = "btn btn-secondary";
-  addCategoryBtn.type = "button";
-  addCategoryBtn.textContent = "确定";
-
-  editorInner.append(newCategoryInput, addCategoryBtn);
-  editor.append(editorInner);
-  editorWrap.append(editor);
-
-  // 展开/收起：展开时聚焦输入框
-  const setCatOpen = (open: boolean): void => {
-    editorWrap.classList.toggle("open", open);
-    trigger.setAttribute("aria-expanded", String(open));
-    if (open) newCategoryInput.focus();
-  };
-  trigger.addEventListener("click", () => setCatOpen(!editorWrap.classList.contains("open")));
-
-  // 点击触发器与编辑区以外的任意位置收起
-  document.addEventListener("click", (e) => {
-    const target = e.target as Node;
-    if (editorWrap.contains(target) || trigger.contains(target)) return;
-    if (editorWrap.classList.contains("open")) setCatOpen(false);
-  });
-
-  // Esc 收起；Enter 等同点击确定（复用主逻辑的校验与添加）
-  newCategoryInput.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") return setCatOpen(false);
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    addCategoryBtn.click();
-  });
-
-  // 成功添加的标志：主逻辑把「非空输入」清空了（校验失败会保留原内容并提示）；
-  // 延迟到主逻辑处理完再对比，成功则自动收起，空值/失败保持展开
-  addCategoryBtn.addEventListener("click", () => {
-    const before = newCategoryInput.value;
-    setTimeout(() => {
-      if (before && !newCategoryInput.value) setCatOpen(false);
-    }, 0);
-  });
-
-  root.append(filters, editorWrap);
+  root.append(filters);
   before.before(root);
-  return { root, filterButton, filterMenu, sortToggle, searchInput, newCategoryInput, addCategoryBtn, categoryHint };
+  return { root, filterButton, filterMenu, sortToggle, searchInput };
 }
 
 /** 排序切换按钮的图标与文案（SVG 与同步栏图标同风格） */
@@ -251,19 +143,9 @@ export function syncSortToggle(btn: HTMLButtonElement, mode: "manual" | "due"): 
 export function syncFilterMenu(
   button: HTMLButtonElement,
   menu: HTMLElement,
-  categories: string[],
   view: View,
 ): void {
-  // 当前生效筛选（复合 UI 一次只激活一个维度，状态优先展示）
-  let activeKind: "category" | "status" | null = null;
-  let activeValue = "";
-  if (view.status !== "all") {
-    activeKind = "status";
-    activeValue = view.status;
-  } else if (view.category !== "__all__") {
-    activeKind = "category";
-    activeValue = view.category;
-  }
+  const selected = view.status !== "all";
 
   const group = (label: string): HTMLElement => {
     const g = document.createElement("div");
@@ -271,56 +153,37 @@ export function syncFilterMenu(
     g.textContent = label;
     return g;
   };
-  const option = (kind: "category" | "status", value: string, label: string): HTMLElement => {
-    const selected = activeKind === kind && activeValue === value;
+  const option = (value: Filter, label: string): HTMLElement => {
+    const isSelected = view.status === value;
     const opt = document.createElement("div");
-    opt.className = "filter-menu-option" + (selected ? " is-selected" : "");
+    opt.className = "filter-menu-option" + (isSelected ? " is-selected" : "");
     opt.setAttribute("role", "option");
-    opt.setAttribute("aria-selected", String(selected));
+    opt.setAttribute("aria-selected", String(isSelected));
     // listbox 漫游 tabindex：只有选中项（无选中则首项）可 Tab 进入，其余靠方向键导航
-    opt.tabIndex = selected ? 0 : -1;
-    opt.dataset.kind = kind;
+    opt.tabIndex = isSelected ? 0 : -1;
+    opt.dataset.kind = "status";
     opt.dataset.value = value;
-    if (kind === "category" && value !== "__uncat__") {
-      const dot = document.createElement("span");
-      dot.className = "cat-dot";
-      dot.style.background = categoryColor(value);
-      dot.setAttribute("aria-hidden", "true");
-      const text = document.createElement("span");
-      text.textContent = label;
-      opt.append(dot, text);
-    } else {
-      opt.textContent = label;
-    }
+    opt.textContent = label;
     return opt;
   };
 
   menu.replaceChildren(
-    group("分类"),
-    option("category", "__uncat__", "未分类"),
-    ...categories.map((name) => option("category", name, name)),
     group("状态"),
-    option("status", "today", STATUS_LABEL.today),
-    option("status", "soon", STATUS_LABEL.soon),
-    option("status", "active", STATUS_LABEL.active),
-    option("status", "completed", STATUS_LABEL.completed),
-    option("status", "deleted", STATUS_LABEL.deleted),
+    option("today", STATUS_LABEL.today),
+    option("soon", STATUS_LABEL.soon),
+    option("active", STATUS_LABEL.active),
+    option("completed", STATUS_LABEL.completed),
+    option("deleted", STATUS_LABEL.deleted),
   );
   // 无激活筛选时首项可 Tab 进入
-  if (!menu.querySelector("[aria-selected='true']")) {
+  if (!selected) {
     const first = menu.querySelector<HTMLElement>("[role='option']");
     if (first) first.tabIndex = 0;
   }
 
-  const text = button.querySelector<HTMLElement>(".filter-button-text")!;
-  text.textContent =
-    activeKind === "category"
-      ? activeValue === "__uncat__"
-        ? "未分类"
-        : activeValue
-      : activeKind === "status"
-        ? (STATUS_LABEL[activeValue as Filter] ?? "全部待办")
-        : "全部待办";
+  button.querySelector<HTMLElement>(".filter-button-text")!.textContent = selected
+    ? (STATUS_LABEL[view.status] ?? "全部待办")
+    : "全部待办";
 }
 
 /**
@@ -403,20 +266,6 @@ export function sortTodosByDue(todos: Todo[]): Todo[] {
   });
 }
 
-/** 单条待办的分类下拉：未分类 + 全部现有分类；存量脏值防御性兜底显示 */
-function buildCategorySelect(todo: Todo, categories: string[]): HTMLSelectElement {
-  const select = document.createElement("select");
-  select.className = "todo-category";
-  select.setAttribute("aria-label", "分类");
-  select.append(buildSelectOption("__uncat__", "未分类"));
-  for (const name of categories) select.append(buildSelectOption(name, name));
-  if (todo.category && !categories.includes(todo.category)) {
-    select.append(buildSelectOption(todo.category, todo.category));
-  }
-  select.value = todo.category ?? "__uncat__";
-  return select;
-}
-
 export interface RenderOptions {
   /** 回收站模式：只显示文本 + 恢复按钮 */
   deleted?: boolean;
@@ -443,7 +292,6 @@ export function renderList(
   listEl: HTMLElement,
   todos: Todo[],
   emptyMessage: string,
-  categories: string[] = [],
   opts: RenderOptions = {},
 ): void {
   const empty = document.createElement("li");
@@ -482,7 +330,7 @@ export function renderList(
         header.setAttribute("role", "presentation");
         fragment.append(header);
       }
-      fragment.append(renderTodoItem(todo, categories, opts));
+      fragment.append(renderTodoItem(todo, opts));
     }
     listEl.replaceChildren(fragment);
     return;
@@ -490,13 +338,13 @@ export function renderList(
 
   const fragment = document.createDocumentFragment();
   for (const todo of todos) {
-    fragment.append(renderTodoItem(todo, categories, opts));
+    fragment.append(renderTodoItem(todo, opts));
   }
   listEl.replaceChildren(fragment);
 }
 
 /** 构建单条待办的 li：主行（勾选/文本/行动按钮）+ 元信息行（优先级/分类/日期/状态）+ 附加行（备注/子任务） */
-function renderTodoItem(todo: Todo, categories: string[], opts: RenderOptions): HTMLElement {
+function renderTodoItem(todo: Todo, opts: RenderOptions): HTMLElement {
   const li = document.createElement("li");
     // 过期标记（含当天到点）；置顶与回收站各有专属类名，样式由 style.css 定义
     li.className =
@@ -571,7 +419,7 @@ function renderTodoItem(todo: Todo, categories: string[], opts: RenderOptions): 
     li.append(main);
 
     if (!opts.batch) {
-      // 第二行：元信息控件（优先级/分类/时刻/日期/状态），与文本左缘对齐
+      // 第二行：元信息控件（优先级/时刻/日期/状态），与文本左缘对齐
       const meta = document.createElement("div");
       meta.className = "todo-meta";
 
@@ -588,16 +436,6 @@ function renderTodoItem(todo: Todo, categories: string[], opts: RenderOptions): 
       prio.setAttribute("aria-label", "优先级");
       prio.textContent = "⚑";
       meta.append(prio);
-
-      if (todo.category) {
-        const dot = document.createElement("span");
-        dot.className = "cat-dot";
-        dot.style.background = categoryColor(todo.category);
-        dot.title = todo.category;
-        dot.setAttribute("aria-hidden", "true");
-        meta.append(dot);
-      }
-      meta.append(buildCategorySelect(todo, categories));
 
       // 截止时刻：仅设置了截止日期时出现（时刻依赖日期才有意义）；空值收成时钟图标
       if (todo.dueDate) {

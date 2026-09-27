@@ -7,7 +7,7 @@ import {
 
 /**
  * 中文自然语言快速添加解析（滴答/Todoist 式输入的轻量子集，纯正则无 AI）：
- *   明天下午3点 开会 #工作 !高   → 标题「开会」+ 明天 15:00 + 分类 工作 + 高优先
+ *   明天下午3点 开会 !高        → 标题「开会」+ 明天 15:00 + 高优先
  *   每周二四 背单词              → 标题「背单词」+ 下一个周二起 + 每周二、四
  * 解析出的片段从文本中剥离，剩余为标题。解析失败的部分原样保留，不做任何猜测提示。
  */
@@ -17,7 +17,6 @@ export interface NLResult {
   date?: string;
   time?: string;
   recurrence?: Recurrence;
-  category?: string;
   priority?: Priority;
 }
 
@@ -72,10 +71,6 @@ export function parseNaturalLanguage(rawInput: string, today: string = todayISO(
   // 1) 优先级：!高 / !中 / !低
   const pm = eat(/!\s*([高中低])/);
   if (pm) out.priority = pm[1] === "高" ? "high" : pm[1] === "中" ? "medium" : "low";
-
-  // 2) 分类：#名称（到空格/井号止）
-  const cm = eat(/#[^\s#]+/);
-  if (cm) out.category = cm[0].slice(1);
 
   // 3) 每月X号：日期 = 本月/下月 X 号 + monthly
   const mm = eat(/每月\s*(\d{1,2})\s*[号日]?/);

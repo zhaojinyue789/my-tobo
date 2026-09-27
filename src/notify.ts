@@ -92,7 +92,7 @@ export async function sendNotification(
 
 /** 待办到期通知（调用方须先 ensurePermission）；通知带「完成 / 稍后」操作按钮 */
 export async function notifyTodoDue(todo: Todo): Promise<void> {
-  const body = todo.category ? `${todo.category}：${todo.text} 已到期` : `${todo.text} 已到期`;
+  const body = `${todo.text} 已到期`;
   await sendNotification("待办已到期", body, {
     icon: "./icons/icon-256.png",
     tag: `my-tobo-due-${todo.id}`,
@@ -106,7 +106,7 @@ export async function notifyTodoDue(todo: Todo): Promise<void> {
 
 /** 「提前 1 天」到期提醒（调用方须先 ensurePermission） */
 export async function notifyTodoTomorrow(todo: Todo): Promise<void> {
-  const body = todo.category ? `${todo.category}：${todo.text} 明天到期` : `${todo.text} 明天到期`;
+  const body = `${todo.text} 明天到期`;
   await sendNotification("待办提醒", body, {
     icon: "./icons/icon-256.png",
     tag: `my-tobo-ahead-${todo.id}`,

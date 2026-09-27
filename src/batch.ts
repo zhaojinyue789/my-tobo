@@ -1,5 +1,4 @@
-import { buildSelectOption } from "./ui";
-import { isDeleted, markDeleted, normalizeCategory } from "./todo";
+import { isDeleted, markDeleted } from "./todo";
 import { app, captureSnapshot, persist, setCompleted, undoSnapshot, visibleTodos } from "./state";
 import { showUndoToast } from "./toast";
 
@@ -10,10 +9,9 @@ export interface BatchRefs {
   doneBtn: HTMLButtonElement;
   pinBtn: HTMLButtonElement;
   deleteBtn: HTMLButtonElement;
-  categorySelect: HTMLSelectElement;
 }
 
-/** 批量操作：全选/批量完成/批量删除/批量改分类/退出（批量条与 footer 的互斥显隐由 render 控制） */
+/** 批量操作：全选/批量完成/批量置顶/批量删除/退出（批量条与 footer 的互斥显隐由 render 控制） */
 export function setupBatch(refs: BatchRefs, render: () => void): void {
   refs.toggleBtn.addEventListener("click", () => {
     app.batchMode = true;
@@ -66,25 +64,4 @@ export function setupBatch(refs: BatchRefs, render: () => void): void {
     persist();
     showUndoToast(`已删除 ${targets.length} 项`, () => undoSnapshot(snapshot));
   });
-  refs.categorySelect.addEventListener("change", () => {
-    const next = normalizeCategory(refs.categorySelect.value);
-    if (!next || app.selectedIds.size === 0) return;
-    const ids = new Set(app.selectedIds);
-    app.todos = app.todos.map((t) =>
-      ids.has(t.id) && !isDeleted(t) && t.category !== next
-        ? { ...t, category: next, updatedAt: Date.now() }
-        : t,
-    );
-    refs.categorySelect.value = "";
-    app.selectedIds.clear();
-    persist();
-  });
-}
-
-/** 批量改分类的下拉：每次渲染同步选项（未选中的占位值 ""） */
-export function syncBatchCategory(categories: string[], select: HTMLSelectElement): void {
-  const previous = select.value;
-  select.replaceChildren(buildSelectOption("", "改分类…"));
-  for (const name of categories) select.append(buildSelectOption(name, name));
-  select.value = previous && categories.includes(previous) ? previous : "";
 }

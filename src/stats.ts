@@ -7,7 +7,6 @@ import {
   todayISO,
   type Todo,
 } from "./todo";
-import { categoryColor } from "./ui";
 import { setupModal } from "./modal";
 
 export interface StatsSummary {
@@ -20,8 +19,6 @@ export interface StatsSummary {
   streak: number;
   /** 近 7 天每日完成数（含今天，index 6 = 今天） */
   days: { date: string; count: number }[];
-  /** 分类分布：[分类名或"__uncat__", 数量]，按数量降序 */
-  categories: [string, number][];
 }
 
 /** 统计口径：墓碑（回收站条目）一律不计入；today 可注入便于测试 */
@@ -56,13 +53,6 @@ export function computeStats(todos: Todo[], today: string = todayISO()): StatsSu
     cursor = dateOffset(cursor, -1);
   }
 
-  const catMap = new Map<string, number>();
-  for (const t of live) {
-    const key = t.category ?? "__uncat__";
-    catMap.set(key, (catMap.get(key) ?? 0) + 1);
-  }
-  const categories = [...catMap.entries()].sort((a, b) => b[1] - a[1]);
-
   return {
     total: live.length,
     active: live.length - completed,
@@ -71,7 +61,6 @@ export function computeStats(todos: Todo[], today: string = todayISO()): StatsSu
     dueToday,
     streak,
     days,
-    categories,
   };
 }
 
@@ -154,43 +143,4 @@ function renderStats(body: HTMLElement, s: StatsSummary): void {
   }
   trend.append(trendTitle, bars);
   body.append(trend);
-
-  // 分类分布
-  const dist = document.createElement("section");
-  dist.className = "stats-section";
-  const distTitle = document.createElement("h3");
-  distTitle.className = "stats-title";
-  distTitle.textContent = "分类分布";
-  dist.append(distTitle);
-  if (s.categories.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "stats-empty";
-    empty.textContent = "还没有待办";
-    dist.append(empty);
-  } else {
-    const total = s.categories.reduce((sum, [, n]) => sum + n, 0);
-    const rows = document.createElement("div");
-    rows.className = "stats-dist";
-    for (const [name, count] of s.categories) {
-      const row = document.createElement("div");
-      row.className = "stats-dist-row";
-      const label = document.createElement("span");
-      label.className = "stats-dist-label";
-      label.textContent = name === "__uncat__" ? "未分类" : name;
-      const track = document.createElement("span");
-      track.className = "stats-dist-track";
-      const fill = document.createElement("span");
-      fill.className = "stats-dist-fill";
-      fill.style.width = `${Math.round((count / total) * 100)}%`;
-      if (name !== "__uncat__") fill.style.background = categoryColor(name);
-      const num = document.createElement("span");
-      num.className = "stats-dist-num";
-      num.textContent = String(count);
-      track.append(fill);
-      row.append(label, track, num);
-      rows.append(row);
-    }
-    dist.append(rows);
-  }
-  body.append(dist);
 }

@@ -2,7 +2,6 @@ import {
   isDeleted,
   isValidDueDate,
   isValidDueTime,
-  normalizeCategory,
   NOTES_MAX_LENGTH,
   orderBetween,
   withOrder,
@@ -267,10 +266,6 @@ export function setupListInteractions(
       updated = updateTodo(current.id, {
         subtasks: current.subtasks.map((s) => (s.id === subId ? { ...s, done } : s)),
       });
-    } else if (target.classList.contains("todo-category")) {
-      const next = target.value === "__uncat__" ? undefined : normalizeCategory(target.value);
-      if ((current.category ?? undefined) === (next ?? undefined)) return;
-      updated = updateTodo(current.id, { category: next });
     } else if (target.classList.contains("todo-due")) {
       const next = isValidDueDate(target.value) ? target.value : undefined; // 非法输入按清空处理，不报错
       if ((current.dueDate ?? undefined) === (next ?? undefined)) return;

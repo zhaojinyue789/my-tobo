@@ -28,13 +28,11 @@ describe("sanitizeRemoteTodo（远端条目校验）", () => {
   it("可选字段非法按缺失清洗，不丢条", () => {
     const out = sanitizeRemoteTodo({
       ...base,
-      category: 42,
       dueDate: "2026/09/26",
       order: "first",
       notified: "yes",
     });
     expect(out).not.toBeNull();
-    expect(out!.category).toBeUndefined();
     expect(out!.dueDate).toBeUndefined();
     expect(out!.order).toBeUndefined();
     expect(out!.notified).toBeUndefined();
@@ -43,7 +41,6 @@ describe("sanitizeRemoteTodo（远端条目校验）", () => {
   it("合法可选字段保留", () => {
     const out = sanitizeRemoteTodo({
       ...base,
-      category: " 工作 ",
       dueDate: "2026-09-26",
       dueTime: "09:30",
       recurrence: "weekly",
@@ -55,7 +52,6 @@ describe("sanitizeRemoteTodo（远端条目校验）", () => {
       deletedAt: 99,
     });
     expect(out).toMatchObject({
-      category: "工作",
       dueDate: "2026-09-26",
       dueTime: "09:30",
       recurrence: "weekly",

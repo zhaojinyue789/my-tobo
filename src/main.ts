@@ -2,12 +2,10 @@ import {
   deletedRecently,
   isDeleted,
   markDeleted,
-  normalizeCategory,
   saveTodos,
 } from "./todo";
 import {
   buildToolbar,
-  categoryOptions,
   renderList,
   syncFilterMenu,
   syncSortToggle,
@@ -17,9 +15,7 @@ import {
   app,
   captureSnapshot,
   initAppServices,
-  manualCategories,
   persist,
-  saveManualCategories,
   setCompleted,
   setSortMode,
   undoSnapshot,
@@ -32,7 +28,7 @@ import { setupNewTodo } from "./new-todo";
 import { setupListInteractions } from "./list-interactions";
 import { attachSwipeActions } from "./swipe";
 import { snoozeTodo } from "./due-scan";
-import { setupBatch, syncBatchCategory } from "./batch";
+import { setupBatch } from "./batch";
 import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
 import { setupStats } from "./stats";
@@ -48,8 +44,7 @@ import "./style.css";
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const { filterButton, filterMenu, sortToggle, searchInput, newCategoryInput, addCategoryBtn, categoryHint } =
-  buildToolbar(listEl);
+const { filterButton, filterMenu, sortToggle, searchInput } = buildToolbar(listEl);
 
 // 全部完成庆祝条 + 完成进度线：toolbar 与列表之间
 const progressLine = document.createElement("div");
@@ -85,7 +80,6 @@ const batchAllBtn = document.querySelector<HTMLButtonElement>("#batch-all")!;
 const batchDoneBtn = document.querySelector<HTMLButtonElement>("#batch-done")!;
 const batchPinBtn = document.querySelector<HTMLButtonElement>("#batch-pin")!;
 const batchDeleteBtn = document.querySelector<HTMLButtonElement>("#batch-delete")!;
-const batchCategory = document.querySelector<HTMLSelectElement>("#batch-category")!;
 const batchExitBtn = document.querySelector<HTMLButtonElement>("#batch-exit")!;
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-backup")!;
 const importBtn = document.querySelector<HTMLButtonElement>("#import-backup")!;
@@ -133,7 +127,7 @@ initAppServices({
   render: () => render(),
 });
 
-const { syncNewTodoCategory } = setupNewTodo(form, input);
+setupNewTodo(form, input);
 setupListInteractions(listEl, { render });
 
 // 移动端滑动操作：右滑完成、左滑删除（批量模式/回收站/行内编辑中停用）
@@ -159,7 +153,6 @@ setupBatch(
     doneBtn: batchDoneBtn,
     pinBtn: batchPinBtn,
     deleteBtn: batchDeleteBtn,
-    categorySelect: batchCategory,
   },
   render,
 );
@@ -208,17 +201,11 @@ function render(): void {
   syncDueBanner(
     { root: dueBannerRoot, text: dueBannerText, viewBtn: dueBannerViewBtn, closeBtn: dueBannerCloseBtn },
     () => {
-      app.view = { category: "__all__", status: "today" };
+      app.view = { status: "today" };
       render();
     },
   );
-  // 派生分类与手动新建合并去重：手动分类被赋给条目后会同时出现在两个来源
-  const categories = [...new Set([...categoryOptions(app.todos), ...manualCategories])].sort(
-    (a, b) => a.localeCompare(b, "zh"),
-  );
-  syncFilter(categories);
-  syncNewTodoCategory(categories);
-  syncBatchCategory(categories, batchCategory);
+  syncFilter();
 
   const deletedView = app.view.status === "deleted";
   form.classList.toggle("hidden", deletedView);
@@ -237,7 +224,6 @@ function render(): void {
         : app.todos.some((t) => !isDeleted(t))
           ? "没有匹配的待办，试试调整筛选或搜索词"
           : "这里空空如也，添加一条待办吧～",
-      categories,
       {
         deleted: deletedView,
         batch: app.batchMode,
@@ -273,16 +259,9 @@ function render(): void {
   batchCountEl.textContent = `已选 ${app.selectedIds.size} 项`;
 }
 
-/** 复合筛选同步：分类消失（最后一条被删）时回退未筛选，再按当前视图态刷新按钮与菜单 */
-function syncFilter(categories: string[]): void {
-  if (
-    app.view.category !== "__all__" &&
-    app.view.category !== "__uncat__" &&
-    !categories.includes(app.view.category)
-  ) {
-    app.view.category = "__all__";
-  }
-  syncFilterMenu(filterButton, filterMenu, categories, app.view);
+/** 复合筛选同步：按当前视图态刷新按钮与菜单 */
+function syncFilter(): void {
+  syncFilterMenu(filterButton, filterMenu, app.view);
 }
 
 function renderSyncStatus(status: SyncStatus): void {
@@ -384,17 +363,9 @@ filterButton.addEventListener("click", () => {
 filterMenu.addEventListener("click", (e) => {
   const opt = (e.target as HTMLElement).closest<HTMLElement>("[data-kind]");
   if (!opt) return;
-  const kind = opt.dataset.kind;
   const value = opt.dataset.value ?? "";
-  const isActive =
-    kind === "category"
-      ? app.view.category === value && app.view.status === "all"
-      : kind === "status" && app.view.status === value && app.view.category === "__all__";
-  app.view = isActive
-    ? { category: "__all__", status: "all" }
-    : kind === "category"
-      ? { category: value, status: "all" }
-      : { category: "__all__", status: value as Filter };
+  const isActive = app.view.status === value;
+  app.view = isActive ? { status: "all" } : { status: value as Filter };
   closeFilterMenu();
   render();
 });
@@ -472,30 +443,6 @@ document.addEventListener("keydown", (e) => {
     searchInput.focus();
     searchInput.select();
   }
-});
-
-// ---------- 新建分类 ----------
-
-// 新建分类：不产生独立实体，仅加入内存集合；空值/重复拒绝
-let hintTimer: ReturnType<typeof setTimeout> | undefined;
-function showCategoryHint(message: string): void {
-  categoryHint.textContent = message;
-  categoryHint.classList.remove("hidden");
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => categoryHint.classList.add("hidden"), 2500);
-}
-
-addCategoryBtn.addEventListener("click", () => {
-  const name = normalizeCategory(newCategoryInput.value);
-  if (!name) return showCategoryHint("分类名不能为空或含非法字符");
-  if (manualCategories.has(name) || categoryOptions(app.todos).includes(name)) {
-    return showCategoryHint(`分类「${name}」已存在`);
-  }
-  manualCategories.add(name);
-  saveManualCategories();
-  newCategoryInput.value = "";
-  showCategoryHint(`已添加「${name}」`);
-  render();
 });
 
 // ---------- 同步 ----------

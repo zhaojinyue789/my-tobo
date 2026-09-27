@@ -13,8 +13,6 @@ export interface Todo {
   updatedAt: number;
   /** 删除墓碑：有值表示已删除，保留 30 天后物理清除，防止删除被同步复活 */
   deletedAt?: number;
-  /** 自由文本分类，未分类为 undefined（合法值经 normalizeCategory 清洗） */
-  category?: string;
   /** 截止日期 YYYY-MM-DD，未设置为 undefined */
   dueDate?: string;
   /** 截止时刻 HH:MM，仅 dueDate 存在时有意义；到点即提醒/过期 */
@@ -107,16 +105,12 @@ export function isRecurrence(value: unknown): value is Recurrence {
 const STORAGE_KEY = "my-tobo.todos";
 /** 墓碑保留时长：超过后物理清除（另一端 30 天内未同步才会受影响） */
 const TOMBSTONE_TTL = 30 * 24 * 60 * 60 * 1000;
-/** 分类名上限（按 UTF-16 码元计，emoji/部分生僻字算 2） */
-const CATEGORY_MAX_LENGTH = 20;
-/** 分类名禁用字符：/ \ < > : " | ? * 及控制字符（U+0000–U+001F、U+007F） */
-const CATEGORY_FORBIDDEN = /[/\\<>:"|?*\u0000-\u001f\u007f]/;
 /** 备注长度上限（保存时静默截断） */
 export const NOTES_MAX_LENGTH = 500;
 /** 单条子任务文本长度上限 */
 export const SUBTASK_MAX_LENGTH = 200;
-/** 一次性迁移标记：category/dueDate 字段引入后，首次加载把迁移结果写回存储并置位，之后不再触发写回 */
-const MIGRATION_KEY_CATEGORY_DUE_DATE = "my-tobo.migrated.category_due_date";
+/** 一次性迁移标记：dueDate 字段引入后，首次加载把迁移结果写回存储并置位，之后不再触发写回 */
+const MIGRATION_KEY_DUE_DATE = "my-tobo.migrated.category_due_date";
 /** 一次性迁移标记：order 排序字段引入后，首次加载把补齐结果写回存储并置位 */
 const MIGRATION_KEY_ORDER = "my-tobo.migrated.order";
 
@@ -127,20 +121,6 @@ export function isDeleted(todo: Todo): boolean {
 /** 墓碑是否仍在保留期内（回收站可见范围）；过期墓碑会被 purgeTombstones 物理清除 */
 export function deletedRecently(todo: Todo): boolean {
   return todo.deletedAt != null && todo.deletedAt > Date.now() - TOMBSTONE_TTL;
-}
-
-/** 分类清洗：trim 后非空、≤20 字符、无禁用字符才合法；否则视为未填写 */
-export function normalizeCategory(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > CATEGORY_MAX_LENGTH || CATEGORY_FORBIDDEN.test(trimmed)) {
-    return undefined;
-  }
-  return trimmed;
-}
-
-export function isValidCategory(value: unknown): boolean {
-  return normalizeCategory(value) !== undefined;
 }
 
 export function isValidDueDate(value: unknown): value is string {
@@ -360,7 +340,6 @@ export function cleanTodoFields(t: Todo): Todo {
     updatedAt:
       typeof t.updatedAt === "number" && Number.isFinite(t.updatedAt) ? t.updatedAt : t.createdAt,
     deletedAt: typeof t.deletedAt === "number" ? t.deletedAt : undefined,
-    category: normalizeCategory(t.category),
     dueDate: isValidDueDate(t.dueDate) ? t.dueDate : undefined,
     dueTime: isValidDueTime(t.dueTime) ? t.dueTime : undefined,
     recurrence: cleanRecurrence(t.recurrence),
@@ -387,14 +366,14 @@ function migrate(item: Todo): Todo {
 function runStartupMigration(todos: Todo[]): void {
   try {
     if (
-      localStorage.getItem(MIGRATION_KEY_CATEGORY_DUE_DATE) &&
+      localStorage.getItem(MIGRATION_KEY_DUE_DATE) &&
       localStorage.getItem(MIGRATION_KEY_ORDER)
     ) {
       return;
     }
     ensureOrders(todos);
     saveTodos(todos);
-    localStorage.setItem(MIGRATION_KEY_CATEGORY_DUE_DATE, "1");
+    localStorage.setItem(MIGRATION_KEY_DUE_DATE, "1");
     localStorage.setItem(MIGRATION_KEY_ORDER, "1");
   } catch {
     // 标记/写回失败（配额满、只读模式等）：静默忽略，不阻塞加载；下次启动重试

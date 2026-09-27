@@ -11,10 +11,7 @@ const t = (over: Partial<Todo> = {}): Todo => ({
   ...over,
 });
 
-const view = (status: View["status"], category: View["category"] = "__all__"): View => ({
-  status,
-  category,
-});
+const view = (status: View["status"]): View => ({ status });
 
 describe("applyFilter：智能视图（today/soon）", () => {
   const today = "2026-09-27";
@@ -36,15 +33,6 @@ describe("applyFilter：智能视图（today/soon）", () => {
   });
   it("即将到期 = 明天起 7 天内", () => {
     expect(applyFilter(todos, view("soon"), today).map((x) => x.id)).toEqual(["due-soon"]);
-  });
-  it("智能视图可与分类筛选叠加", () => {
-    const cats = todos.map((x) =>
-      x.id === "overdue" ? { ...x, category: "工作" } : { ...x, category: undefined },
-    );
-    expect(applyFilter(cats, view("today", "工作"), today).map((x) => x.id)).toEqual(["overdue"]);
-    expect(applyFilter(cats, view("today", "__uncat__"), today).map((x) => x.id)).toEqual([
-      "due-today",
-    ]);
   });
   it("状态筛选展示名覆盖全部 Filter 值", () => {
     for (const f of ["all", "active", "completed", "deleted", "today", "soon"] as const) {

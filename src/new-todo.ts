@@ -4,21 +4,19 @@ import {
   dateOffset,
   isValidDueDate,
   isValidDueTime,
-  normalizeCategory,
   RECURRENCES,
   recurrenceLabel,
   todayISO,
   topOrder,
 } from "./todo";
+import { buildSelectOption } from "./ui";
 import { parseNaturalLanguage, type NLResult } from "./nl-parse";
-import { buildSelectOption, categoryOptions } from "./ui";
-import { app, manualCategories, persist } from "./state";
+import { app, persist } from "./state";
 import { notifyTodoOnce } from "./due-scan";
 
 /**
- * 新建表单：主行只留输入框 + 添加按钮，分类/日期/时刻/重复收进第二行选项区；
+ * 新建表单：主行只留输入框 + 添加按钮，日期/时刻/重复/优先级收进第二行选项区；
  * 聚焦输入框滑出（pointerdown 覆盖鼠标/触屏，focus 覆盖 Tab 键盘进入），提交后收起。
- * 返回 syncNewTodoCategory 供每轮渲染同步分类下拉选项。
  */
 export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
   const formOptions = document.createElement("div");
@@ -26,7 +24,7 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
   formOptions.className = "todo-form-options";
   form.append(formOptions); // 放在提交按钮之后：主行永远是 输入框+添加，选项区独占第二行
 
-  // 自然语言解析 chips：输入实时解析（明天3点/每周二/#分类/!高），Todoist 式预览将应用的字段
+  // 自然语言解析 chips：输入实时解析（明天3点/每周二/!高），Todoist 式预览将应用的字段
   const nlChips = document.createElement("div");
   nlChips.id = "nl-chips";
   nlChips.className = "nl-chips hidden";
@@ -58,12 +56,6 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
       chip.textContent = `↻ ${recurrenceLabel(nl.recurrence)}`;
       parts.push(chip);
     }
-    if (nl.category) {
-      const chip = document.createElement("span");
-      chip.className = "nl-chip";
-      chip.textContent = `# ${nl.category}`;
-      parts.push(chip);
-    }
     if (nl.priority) {
       const chip = document.createElement("span");
       chip.className = "nl-chip";
@@ -84,13 +76,6 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
       renderChips(nl);
     }, 120);
   });
-
-  // 新增表单的分类选择器：选项每次渲染后同步更新
-  const newTodoCategory = document.createElement("select");
-  newTodoCategory.id = "new-todo-category";
-  newTodoCategory.className = "new-todo-category";
-  newTodoCategory.setAttribute("aria-label", "新待办的分类");
-  formOptions.append(newTodoCategory);
 
   // 新增表单的截止日期：空值收成日历图标，与列表行内日期同款交互
   const newTodoDue = document.createElement("input");
@@ -170,34 +155,26 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
     nl = rawText ? parseNaturalLanguage(rawText) : null;
     const text = nl?.text || rawText;
     if (!text) return;
-    // 极罕见竞态：选中的分类在提交前已消失（无引用且非手动新建）→ 降级为未分类，不丢待办
-    const known = new Set([...categoryOptions(app.todos), ...manualCategories]);
-    const rawCategory = newTodoCategory.value;
-    const category =
-      rawCategory && known.has(rawCategory) ? normalizeCategory(rawCategory) : undefined;
     const rawDue = newTodoDue.value;
     const rawTime = newTodoTime.value;
     const rawRepeat = newTodoRepeat.value;
     const todo = createTodo(text);
-    if (category) todo.category = category; // createdAt = updatedAt = now 已由 createTodo 设定
     if (isValidDueDate(rawDue)) todo.dueDate = rawDue;
     if (todo.dueDate && isValidDueTime(rawTime)) todo.dueTime = rawTime; // 时刻依赖日期才有意义
     if (rawRepeat === "daily" || rawRepeat === "weekly" || rawRepeat === "monthly") {
       todo.recurrence = rawRepeat;
     }
     todo.priority = cleanPriority(newTodoPriority.value);
-    // NL 解析结果覆盖手动选择（更明确的表达）；#新分类 直接创建（由派生分类集自然收录）
+    // NL 解析结果覆盖手动选择（更明确的表达）
     if (nl) {
       if (nl.date) todo.dueDate = nl.date;
       if (nl.time && todo.dueDate) todo.dueTime = nl.time;
       if (nl.recurrence) todo.recurrence = nl.recurrence;
       if (nl.priority) todo.priority = nl.priority;
-      const nlCategory = normalizeCategory(nl.category);
-      if (nlCategory) todo.category = nlCategory;
     }
     todo.order = topOrder(app.todos); // 新条目置顶：order 取现存最小值减 1
     app.todos.unshift(todo);
-    input.value = ""; // 分类下拉保留当前选中，便于连续录入同一分类
+    input.value = "";
     renderChips(null);
     nl = null;
     newTodoDue.value = ""; // 日期/时刻每次清空：通常一条一个截止时间
@@ -223,23 +200,5 @@ export function setupNewTodo(form: HTMLFormElement, input: HTMLInputElement) {
   input.addEventListener("pointerdown", () => formOptions.classList.add("open"));
   input.addEventListener("focus", () => formOptions.classList.add("open"));
 
-  /** 选项 = 未分类("") + 派生分类 + 手动新建；保留当前选中（连续录入），无则按视图态默认 */
-  function syncNewTodoCategory(categories: string[]): void {
-    const previous = newTodoCategory.value;
-    newTodoCategory.replaceChildren();
-    const uncat = buildSelectOption("", "未分类");
-    newTodoCategory.append(
-      uncat,
-      ...categories.map((name) => buildSelectOption(name, name)),
-    );
-    const fallback =
-      app.view.category !== "__all__" &&
-      app.view.category !== "__uncat__" &&
-      categories.includes(app.view.category)
-        ? app.view.category
-        : "";
-    newTodoCategory.value = previous && categories.includes(previous) ? previous : fallback;
-  }
-
-  return { syncNewTodoCategory };
+  return {};
 }

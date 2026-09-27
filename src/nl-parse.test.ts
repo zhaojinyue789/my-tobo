@@ -4,12 +4,11 @@ import { parseNaturalLanguage } from "./nl-parse";
 const T = "2026-09-27"; // 周日
 
 describe("parseNaturalLanguage（自然语言快速添加）", () => {
-  it("明天 + 时刻 + 分类 + 优先级，全部剥离后剩余为标题", () => {
-    const r = parseNaturalLanguage("明天下午3点 开会 #工作 !高", T);
+  it("明天 + 时刻 + 优先级，全部剥离后剩余为标题", () => {
+    const r = parseNaturalLanguage("明天下午3点 开会 !高", T);
     expect(r.text).toBe("开会");
     expect(r.date).toBe("2026-09-28");
     expect(r.time).toBe("15:00");
-    expect(r.category).toBe("工作");
     expect(r.priority).toBe("high");
   });
 
@@ -75,7 +74,6 @@ describe("parseNaturalLanguage（自然语言快速添加）", () => {
     const r = parseNaturalLanguage("买一张返程票", T);
     expect(r.text).toBe("买一张返程票");
     expect(r.date).toBeUndefined();
-    expect(r.category).toBeUndefined();
   });
 
   it("工作日 → 周一至周五", () => {

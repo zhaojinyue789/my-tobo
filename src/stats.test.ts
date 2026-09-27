@@ -56,19 +56,4 @@ describe("computeStats", () => {
     expect(computeStats(todos.slice(1), today).streak).toBe(2); // 今天没完成，从昨天起算
   });
 
-  it("分类分布按数量降序，未分类聚合", () => {
-    const todos = [
-      t({ id: "a", category: "工作" }),
-      t({ id: "b", category: "工作" }),
-      t({ id: "c", category: "生活" }),
-      t({ id: "d" }),
-      t({ id: "e", category: "工作", deletedAt: Date.now() }),
-    ];
-    const s = computeStats(todos, today);
-    expect(s.categories).toEqual([
-      ["工作", 2],
-      ["生活", 1],
-      ["__uncat__", 1],
-    ]);
-  });
 });

@@ -13,12 +13,10 @@ import {
   isDueToday,
   isDueTomorrow,
   isOverdue,
-  isValidCategory,
   isValidDueDate,
   isValidDueTime,
   markDeleted,
   mergeTodos,
-  normalizeCategory,
   NOTES_MAX_LENGTH,
   orderBetween,
   purgeTombstones,
@@ -37,32 +35,6 @@ const t = (over: Partial<Todo> = {}): Todo => ({
   createdAt: over.createdAt ?? 1000,
   updatedAt: over.updatedAt ?? 1000,
   ...over,
-});
-
-describe("normalizeCategory", () => {
-  it("trim 后合法值保留", () => {
-    expect(normalizeCategory("  工作  ")).toBe("工作");
-  });
-  it("空值/非字符串返回 undefined", () => {
-    expect(normalizeCategory("   ")).toBeUndefined();
-    expect(normalizeCategory(undefined)).toBeUndefined();
-    expect(normalizeCategory(42)).toBeUndefined();
-  });
-  it("超长（>20 码元）拒绝", () => {
-    expect(normalizeCategory("a".repeat(20))).toBe("a".repeat(20));
-    expect(normalizeCategory("a".repeat(21))).toBeUndefined();
-  });
-  it("禁用字符拒绝", () => {
-    for (const ch of ['/\\<>:"|?*']) {
-      expect(normalizeCategory(`a${ch}b`)).toBeUndefined();
-    }
-    expect(normalizeCategory("a\u0000b")).toBeUndefined();
-    expect(normalizeCategory("a\u007fb")).toBeUndefined();
-  });
-  it("isValidCategory 与 normalizeCategory 一致", () => {
-    expect(isValidCategory(" 工作 ")).toBe(true);
-    expect(isValidCategory("")).toBe(false);
-  });
 });
 
 describe("isValidDueDate / isOverdue", () => {
@@ -138,7 +110,6 @@ describe("cleanTodoFields（白名单清洗）", () => {
     const out = cleanTodoFields({
       ...t(),
       updatedAt: undefined as unknown as number,
-      category: 42 as unknown as string,
       dueDate: "2026/09/26" as unknown as string,
       dueTime: "25:99" as unknown as string,
       recurrence: "yearly" as unknown as Todo["recurrence"],
@@ -146,7 +117,6 @@ describe("cleanTodoFields（白名单清洗）", () => {
       notified: "yes" as unknown as boolean,
     });
     expect(out.updatedAt).toBe(out.createdAt);
-    expect(out.category).toBeUndefined();
     expect(out.dueDate).toBeUndefined();
     expect(out.dueTime).toBeUndefined();
     expect(out.recurrence).toBeUndefined();
@@ -166,7 +136,6 @@ describe("cleanTodoFields（白名单清洗）", () => {
   it("合法值保留", () => {
     const out = cleanTodoFields({
       ...t(),
-      category: " 工作 ",
       dueDate: "2026-09-26",
       dueTime: "09:30",
       recurrence: "weekly",
@@ -177,7 +146,6 @@ describe("cleanTodoFields（白名单清洗）", () => {
       deletedAt: 99,
     });
     expect(out).toMatchObject({
-      category: "工作",
       dueDate: "2026-09-26",
       dueTime: "09:30",
       recurrence: "weekly",
@@ -247,8 +215,8 @@ describe("墓碑与比较", () => {
     expect(sameTodos([t({ id: "a", order: 1 })], [t({ id: "a", order: 2 })])).toBe(false);
   });
   it("sameTodos 与对象属性插入顺序无关", () => {
-    const a = t({ id: "a", category: "工作", pinned: true });
-    const b = { pinned: true, category: "工作", text: "x", completed: false, id: "a", createdAt: a.createdAt, updatedAt: a.updatedAt } as Todo;
+    const a = t({ id: "a", dueDate: "2026-09-27", pinned: true });
+    const b = { pinned: true, dueDate: "2026-09-27", text: "x", completed: false, id: "a", createdAt: a.createdAt, updatedAt: a.updatedAt } as Todo;
     expect(sameTodos([a], [b])).toBe(true);
   });
   it("createTodo 生成 id 且 createdAt = updatedAt", () => {
