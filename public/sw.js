@@ -21,6 +21,24 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// 到期通知的操作按钮（✓ 完成 / ⏰ 稍后）：把动作回传给页面处理；
+// 点通知正文则聚焦已打开的应用（无打开窗口时不主动新建，用户自行进入）
+self.addEventListener("notificationclick", (event) => {
+  const { action, data } = event.notification;
+  event.notification.close();
+  if (!action || !data || typeof data.id !== "string") return;
+  event.waitUntil(
+    (async () => {
+      const msg = { type: action === "complete" ? "notify-complete" : "notify-snooze", id: data.id };
+      const clientList = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+      if (clientList.length > 0) {
+        clientList[0].postMessage(msg);
+        if (clientList[0].focus) await clientList[0].focus();
+      }
+    })(),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   // 只处理同源 GET；GitHub API 同步请求不经过 SW

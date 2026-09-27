@@ -31,6 +31,7 @@ import { SyncController, type SyncStatus } from "./sync";
 import { setupNewTodo } from "./new-todo";
 import { setupListInteractions } from "./list-interactions";
 import { attachSwipeActions } from "./swipe";
+import { snoozeTodo } from "./due-scan";
 import { setupBatch, syncBatchCategory } from "./batch";
 import { setupBackup } from "./backup";
 import { setupSyncModal } from "./sync-ui";
@@ -529,6 +530,19 @@ window.addEventListener("online", () => void sync.syncNow());
 if ("serviceWorker" in navigator && !import.meta.env.DEV && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("./sw.js").catch(() => {
     /* 注册失败不影响功能 */
+  });
+}
+
+// 到期通知操作按钮的回传：SW notificationclick → postMessage → 这里落地
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    const msg = e.data as { type?: string; id?: string } | undefined;
+    if (!msg || typeof msg.id !== "string") return;
+    if (msg.type === "notify-complete") {
+      if (setCompleted(msg.id, true)) persist();
+    } else if (msg.type === "notify-snooze") {
+      snoozeTodo(msg.id);
+    }
   });
 }
 
