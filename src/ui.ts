@@ -92,6 +92,8 @@ export interface ToolbarRefs {
   filterButton: HTMLButtonElement;
   /** 复合筛选菜单（选项每次 render 由 syncFilterMenu 重建） */
   filterMenu: HTMLElement;
+  /** 排序模式切换按钮：手动 ⇄ 按截止时间（图标反映当前模式） */
+  sortToggle: HTMLButtonElement;
   /** 文本搜索框（实时过滤当前视图） */
   searchInput: HTMLInputElement;
   newCategoryInput: HTMLInputElement;
@@ -132,6 +134,15 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
 
   filterWrap.append(filterButton, filterMenu);
 
+  // 排序模式切换：⇅ 手动（拖动/键盘排序）⇄ 🕒 按截止时间（近的在前）。
+  // 图标反映当前模式，点击切换；持久化为设备本地偏好（main.ts 绑定点击）
+  const sortToggle = document.createElement("button");
+  sortToggle.className = "sort-toggle";
+  sortToggle.type = "button";
+  sortToggle.setAttribute("aria-pressed", "false");
+  sortToggle.setAttribute("aria-label", "排序模式");
+  sortToggle.title = "排序：手动";
+
   // 文本搜索：实时过滤当前视图（Ctrl+F 聚焦由 main.ts 绑定）
   const searchInput = document.createElement("input");
   searchInput.id = "todo-search";
@@ -154,7 +165,7 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
   categoryHint.className = "category-hint hidden";
   categoryHint.setAttribute("role", "status");
   // 提示放在筛选行内而非编辑区里：编辑区自动收起后「已添加」仍可见
-  filters.append(filterWrap, searchInput, trigger, categoryHint);
+  filters.append(filterWrap, sortToggle, searchInput, trigger, categoryHint);
 
   // 行内编辑区：默认收起（0 高度），点击触发器后在下方滑出输入框 + 确定按钮
   const editorWrap = document.createElement("div");
@@ -217,7 +228,21 @@ export function buildToolbar(before: HTMLElement): ToolbarRefs {
 
   root.append(filters, editorWrap);
   before.before(root);
-  return { root, filterButton, filterMenu, searchInput, newCategoryInput, addCategoryBtn, categoryHint };
+  return { root, filterButton, filterMenu, sortToggle, searchInput, newCategoryInput, addCategoryBtn, categoryHint };
+}
+
+/** 排序切换按钮的图标与文案（SVG 与同步栏图标同风格） */
+const SORT_ICONS = {
+  manual: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v13M7 4L4 7M7 4l3 3" /><path d="M17 20V7M17 20l-3-3M17 20l3-3" /></svg>`,
+  due: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>`,
+} as const;
+
+/** 按当前排序模式同步切换按钮的图标 / 按下态 / 提示文案 */
+export function syncSortToggle(btn: HTMLButtonElement, mode: "manual" | "due"): void {
+  btn.innerHTML = SORT_ICONS[mode];
+  btn.setAttribute("aria-pressed", String(mode === "due"));
+  btn.title =
+    mode === "due" ? "排序：按截止时间，近的在前（点击切回手动）" : "排序：手动（点击改为按截止时间）";
 }
 
 /** 复合筛选同步：按当前视图态重建菜单选项、标记选中项并更新按钮文字 */
@@ -311,6 +336,43 @@ export function dueStatus(
   if (t.dueDate === today) return { label: "今天", kind: "today" };
   if (t.dueDate === dateOffset(today, 1)) return { label: "明天", kind: "tomorrow" };
   return null;
+}
+
+/**
+ * 截止时间排序键：date-only 视为当天 23:59（当天最后一刻到期）；
+ * 字符串比较即时间先后（YYYY-MM-DDTHH:MM 字典序=时间序）。
+ */
+function dueSortKey(t: Todo): string | null {
+  if (!t.dueDate) return null;
+  return `${t.dueDate}T${t.dueTime ?? "23:59"}`;
+}
+
+/**
+ * 截止时间比较：近的在前。已过期（日期更早）自然排最前；
+ * 无截止条目排在所有有截止条目之后，组内保持手动顺序（order 升序，回退 createdAt 降序）。
+ */
+export function compareByDue(a: Todo, b: Todo): number {
+  const ka = dueSortKey(a);
+  const kb = dueSortKey(b);
+  if (ka && kb) return ka < kb ? -1 : ka > kb ? 1 : 0;
+  if (ka) return -1;
+  if (kb) return 1;
+  const ao = a.order ?? Number.POSITIVE_INFINITY;
+  const bo = b.order ?? Number.POSITIVE_INFINITY;
+  if (ao !== bo) return ao - bo;
+  return b.createdAt - a.createdAt;
+}
+
+/**
+ * 按截止时间的视图排序：置顶未完成组 → 未完成组 → 已完成组，
+ * 组内近截止在前（已完成沉底，避免过期已完成条目插队到待办前面）。
+ */
+export function sortTodosByDue(todos: Todo[]): Todo[] {
+  const rank = (t: Todo): number => (t.completed ? 2 : t.pinned ? 0 : 1);
+  return [...todos].sort((a, b) => {
+    const r = rank(a) - rank(b);
+    return r !== 0 ? r : compareByDue(a, b);
+  });
 }
 
 /** 单条待办的分类下拉：未分类 + 全部现有分类；存量脏值防御性兜底显示 */

@@ -313,7 +313,10 @@ export function setupListInteractions(
 
   attachDragReorder(listEl, {
     onDrop: (id, prevId, nextId) => {
-      if (id && app.view.status !== "deleted") applyMove(id, prevId, nextId); // 回收站内不排序
+      // 回收站内不排序；按截止时间排序时手动顺序不参与展示，拖动无意义
+      if (id && app.view.status !== "deleted" && app.sortMode === "manual") {
+        applyMove(id, prevId, nextId);
+      }
     },
   });
 
@@ -321,7 +324,7 @@ export function setupListInteractions(
   // 列表重建后把焦点放回同一条目的同类控件
   listEl.addEventListener("keydown", (e) => {
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-    if (app.view.status === "deleted") return; // 回收站内不排序
+    if (app.view.status === "deleted" || app.sortMode !== "manual") return; // 回收站/截止时间排序不适用
     const item = (e.target as HTMLElement).closest<HTMLElement>(".todo-item");
     const id = item?.dataset.id;
     if (!item || !id) return;

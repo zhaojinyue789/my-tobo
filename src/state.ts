@@ -7,12 +7,25 @@ import {
   topOrder,
   type Todo,
 } from "./todo";
-import { applyFilter, type View } from "./ui";
+import { applyFilter, sortTodosByDue, type View } from "./ui";
+
+export type SortMode = "manual" | "due";
+
+const SORT_KEY = "my-tobo.sort";
+
+/** 排序模式为设备本地显示偏好（不同步）；默认保持手动排序 */
+function loadSortMode(): SortMode {
+  try {
+    return localStorage.getItem(SORT_KEY) === "due" ? "due" : "manual";
+  } catch {
+    return "manual";
+  }
+}
 
 /**
  * 全局应用状态：唯一可变数据源，各功能模块从这里读写，main.ts 只负责装配与渲染。
  * 数据变更一律走 persist()（写存储 → 防抖同步 → 重渲染）；
- * 视图态（view/searchTerm/batchMode/editingId）只影响渲染，不写存储、不触发同步。
+ * 视图态（view/searchTerm/batchMode/editingId/sortMode）只影响渲染，不写存储、不触发同步。
  */
 export const app = {
   todos: loadTodos(),
@@ -24,7 +37,19 @@ export const app = {
   /** 批量模式与已选条目 */
   batchMode: false,
   selectedIds: new Set<string>(),
+  /** 排序模式：manual=手动（order 字段），due=按截止时间（近的在前） */
+  sortMode: loadSortMode(),
 };
+
+/** 切换排序模式并持久化（设备本地偏好） */
+export function setSortMode(mode: SortMode): void {
+  app.sortMode = mode;
+  try {
+    localStorage.setItem(SORT_KEY, mode);
+  } catch {
+    /* 持久化失败不影响本次会话 */
+  }
+}
 
 const MANUAL_CATEGORIES_KEY = "my-tobo.manual-categories";
 
@@ -82,14 +107,17 @@ export function saveOnly(): void {
   services.onLocalChange();
 }
 
-/** 当前视图可见条目：视图过滤 + 文本/备注搜索（拖动/键盘排序/批量共用同一份可见集） */
+/** 当前视图可见条目：视图过滤 → 文本/备注搜索 → 排序模式（拖动/键盘排序/批量共用同一份可见集） */
 export function visibleTodos(): Todo[] {
   const list = applyFilter(app.todos, app.view);
   const term = app.searchTerm.trim().toLowerCase();
-  if (!term) return list;
-  return list.filter(
-    (t) => t.text.toLowerCase().includes(term) || (t.notes ?? "").toLowerCase().includes(term),
-  );
+  const filtered = term
+    ? list.filter(
+        (t) => t.text.toLowerCase().includes(term) || (t.notes ?? "").toLowerCase().includes(term),
+      )
+    : list;
+  // due 模式按截止时间排序（近的在前）；manual 模式保持手动顺序（order 字段）
+  return app.sortMode === "due" ? sortTodosByDue(filtered) : filtered;
 }
 
 /**

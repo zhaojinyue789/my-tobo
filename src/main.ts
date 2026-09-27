@@ -5,7 +5,14 @@ import {
   normalizeCategory,
   saveTodos,
 } from "./todo";
-import { buildToolbar, categoryOptions, renderList, syncFilterMenu, type Filter } from "./ui";
+import {
+  buildToolbar,
+  categoryOptions,
+  renderList,
+  syncFilterMenu,
+  syncSortToggle,
+  type Filter,
+} from "./ui";
 import {
   app,
   captureSnapshot,
@@ -13,6 +20,7 @@ import {
   manualCategories,
   persist,
   saveManualCategories,
+  setSortMode,
   undoSnapshot,
   visibleTodos,
 } from "./state";
@@ -36,7 +44,7 @@ import "./style.css";
 const form = document.querySelector<HTMLFormElement>("#todo-form")!;
 const input = document.querySelector<HTMLInputElement>("#todo-input")!;
 const listEl = document.querySelector<HTMLUListElement>("#todo-list")!;
-const { filterButton, filterMenu, searchInput, newCategoryInput, addCategoryBtn, categoryHint } =
+const { filterButton, filterMenu, sortToggle, searchInput, newCategoryInput, addCategoryBtn, categoryHint } =
   buildToolbar(listEl);
 
 // 全部完成庆祝条 + 完成进度线：toolbar 与列表之间
@@ -294,6 +302,16 @@ fabAdd.addEventListener("click", () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
   input.focus();
 });
+
+// ---------- 排序模式 ----------
+
+// 手动（拖动/键盘排序）⇄ 按截止时间（近的在前）；偏好持久化在设备本地
+sortToggle.addEventListener("click", () => {
+  setSortMode(app.sortMode === "due" ? "manual" : "due");
+  syncSortToggle(sortToggle, app.sortMode);
+  render();
+});
+syncSortToggle(sortToggle, app.sortMode);
 
 // ---------- 清除动作（footer，均带撤销窗口） ----------
 

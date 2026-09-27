@@ -588,6 +588,41 @@ body {
   gap: 8px;
 }
 
+/* 排序模式切换：手动 ⇄ 按截止时间；与胶囊控件同族的方形小按钮 */
+.sort-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font: inherit;
+  color: var(--text-muted);
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.sort-toggle:hover {
+  color: var(--text);
+  background: var(--field-hover);
+}
+
+.sort-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sort-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 /* 复合筛选：按钮文字显示当前生效筛选，点击开合分组菜单 */
 .filter-dd {
   position: relative;
